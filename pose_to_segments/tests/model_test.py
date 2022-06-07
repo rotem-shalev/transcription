@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import torch
 
-from ..model import PoseTaggingModel
+from pose_to_segments.model import PoseTaggingModel
 
 
 class ModelTestCase(unittest.TestCase):

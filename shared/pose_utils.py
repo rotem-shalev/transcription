@@ -6,16 +6,29 @@ from pose_format.pose_header import PoseHeaderDimensions, PoseHeader
 from pose_format.utils.openpose import OpenPose_Components
 
 
+def pose_hide_low_conf(pose: Pose):
+    mask = pose.body.confidence <= 0.2
+    pose.body.confidence[mask] = 0
+    stacked_confidence = np.stack([mask, mask], axis=3)
+    masked_data = ma.masked_array(pose.body.data, mask=stacked_confidence)
+    pose.body.data = masked_data
+
+
 def pose_hide_legs(pose: Pose):
-    if pose.header.components[0].name == "POSE_LANDMARKS":
+    if pose.header.components[0].name == "pose_keypoints_2d":
+        point_names = ["Knee", "Ankle", "Heel", "BigToe", "SmallToe"]
+        points = [pose.header._get_point_index(pose.header.components[0].name, side+n)
+                for n in point_names for side in ["L", "R"]]
+    elif pose.header.components[0].name == "POSE_LANDMARKS":
         point_names = ["KNEE", "ANKLE", "HEEL", "FOOT_INDEX"]
         # pylint: disable=protected-access
         points = [pose.header._get_point_index("POSE_LANDMARKS", side + "_" + n)
                   for n in point_names for side in ["LEFT", "RIGHT"]]
-        pose.body.confidence[:, :, points] = 0
-        pose.body.data[:, :, points, :] = 0
     else:
         raise ValueError("Unknown pose header schema for hiding legs")
+
+    pose.body.confidence[:, :, points] = 0
+    pose.body.data[:, :, points, :] = 0
 
 
 def pose_normalization_info(pose_header: PoseHeader):

@@ -1,5 +1,8 @@
 import importlib
-from typing import List, TypedDict, Union, Dict
+from typing import List, Union, Dict
+import numpy as np
+import numpy.ma as ma
+from tqdm import tqdm
 
 import tensorflow_datasets as tfds
 from sign_language_datasets.datasets import SignDatasetConfig
@@ -8,12 +11,10 @@ from pose_format import Pose
 from pose_format.pose_header import PoseHeader
 from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.reader import BufferReader
-from tqdm import tqdm
-
-from .pose_utils import pose_normalization_info, pose_hide_legs
+from shared.pose_utils import pose_normalization_info, pose_hide_legs, pose_hide_low_conf
 
 
-class ProcessedPoseDatum(TypedDict):
+class ProcessedPoseDatum(Dict):
     id: str
     pose: Union[Pose, Dict[str, Pose]]
     tf_datum: dict
@@ -21,7 +22,10 @@ class ProcessedPoseDatum(TypedDict):
 
 def get_tfds_dataset(name, poses="holistic", fps=25, split="train",
                      components: List[str] = None, data_dir=None, version="1.0.0"):
-    dataset_module = importlib.import_module("sign_language_datasets.datasets." + name + "." + name)
+    if name == "hamnosys":
+        dataset_module = importlib.import_module("datasets.hamnosys")
+    else:
+        dataset_module = importlib.import_module("sign_language_datasets.datasets." + name + "." + name)
 
     # Loading a dataset with custom configuration
     config = SignDatasetConfig(name=poses + "-" + str(fps),
@@ -41,10 +45,11 @@ def get_tfds_dataset(name, poses="holistic", fps=25, split="train",
 
 def process_datum(datum, pose_header: PoseHeader, normalization_info,
                   components: List[str] = None) -> ProcessedPoseDatum:
+
     tf_poses = {"": datum["pose"]} if "pose" in datum else datum["poses"]
     poses = {}
     for key, tf_pose in tf_poses.items():
-        fps = int(tf_pose["fps"].numpy())
+        fps = int(datum["fps"].numpy())
         pose_body = NumPyPoseBody(fps, tf_pose["data"].numpy(), tf_pose["conf"].numpy())
         pose = Pose(pose_header, pose_body)
 
@@ -54,6 +59,7 @@ def process_datum(datum, pose_header: PoseHeader, normalization_info,
 
         pose = pose.normalize(normalization_info)
         pose_hide_legs(pose)
+        pose_hide_low_conf(pose)
         poses[key] = pose
 
     return {

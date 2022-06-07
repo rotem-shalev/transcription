@@ -3,8 +3,8 @@ import unittest
 
 import torch
 
-from ..model import IterativeTextGuidedPoseGenerationModel
-from .tokenizer import DummyTokenizer
+from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
+from text_to_pose.tests.tokenizer import DummyTokenizer
 
 
 def get_batch(bsz=4):
@@ -52,7 +52,7 @@ class ModelOverfitTestCase(unittest.TestCase):
         print("losses", losses)
 
         first_pose = batch["pose"]["data"][0, 0, :, :]
-        prediction = model.forward("", first_pose=first_pose, step_size=1)
+        prediction = model.forward("", first_pose=first_pose)
         next(prediction)
         for _ in range(steps):
             seq = next(prediction)

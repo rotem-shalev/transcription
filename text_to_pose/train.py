@@ -5,14 +5,18 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from ..shared.collator import zero_pad_collator
-from ..shared.tokenizers import HamNoSysTokenizer
-from .args import args
-from .data import get_dataset
-from .model import IterativeTextGuidedPoseGenerationModel
+import sys
+sys.path.insert(0, '/home/nlp/rotemsh/transcription')
+
+from shared.collator import zero_pad_collator
+from text_to_pose.args import args
+from text_to_pose.data import get_dataset
+from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
+from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
+from text_to_pose.pred import pred
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     LOGGER = None
     if not args.no_wandb:
@@ -20,14 +24,19 @@ if __name__ == '__main__':
         if LOGGER.experiment.sweep_id is None:
             LOGGER.log_hyperparams(args)
 
-    train_dataset = get_dataset(poses=args.pose, fps=args.fps, components=args.pose_components,
+    dataset_name = "hamnosys"
+    args.batch_size = 8
+    # args.gpus = 4
+
+    train_dataset = get_dataset(name=dataset_name, poses=args.pose, fps=args.fps, components=args.pose_components,
                                 max_seq_size=args.max_seq_size, split="train[10:]")
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8,
                               shuffle=True, collate_fn=zero_pad_collator)
 
-    validation_dataset = get_dataset(poses=args.pose, fps=args.fps, components=args.pose_components,
+    validation_dataset = get_dataset(name=dataset_name, poses=args.pose, fps=args.fps, components=args.pose_components,
                                      max_seq_size=args.max_seq_size, split="train[:10]")
-    validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size, collate_fn=zero_pad_collator)
+    validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size,
+                                   collate_fn=zero_pad_collator, num_workers=8)
 
     _, num_pose_joints, num_pose_dims = train_dataset[0]["pose"]["data"].shape
 
@@ -40,6 +49,8 @@ if __name__ == '__main__':
                       encoder_heads=args.encoder_heads,
                       max_seq_size=args.max_seq_size)
 
+    experiment_name = "test"
+    # args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     if args.checkpoint is not None:
         model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     else:
@@ -48,9 +59,8 @@ if __name__ == '__main__':
     callbacks = []
     if LOGGER is not None:
         os.makedirs("models", exist_ok=True)
-
         callbacks.append(ModelCheckpoint(
-            dirpath="models/" + LOGGER.experiment.id,
+            dirpath="models/" + experiment_name,#LOGGER.experiment.id,
             filename="model",
             verbose=True,
             save_top_k=1,
@@ -59,9 +69,14 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=5000,
+        max_epochs=2,
         logger=LOGGER,
         callbacks=callbacks,
-        gpus=args.gpus)
+        gpus=args.gpus,
+        accumulate_grad_batches=4,
+        # strategy="ddp"
+    )
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)
+    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}"
+    pred(model, validation_dataset, output_dir)
