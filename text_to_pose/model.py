@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import numpy as np
 
-NUM_STEPS = 50  # 10 or 30
 EPSILON = 1e-4
 
 
@@ -27,7 +26,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             encoder_heads: int = 2,
             encoder_dim_feedforward: int = 2048,
             max_seq_size: int = 1000,
-            num_steps: int = NUM_STEPS):
+            num_steps: int = 50):
         super().__init__()
 
         self.tokenizer = tokenizer
@@ -92,6 +91,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
     def refine_pose_sequence(self, pose_sequence, text_encoding, positional_embedding, step_encoding):
         batch_size, seq_length, _, _ = pose_sequence["data"].shape
         flat_pose_data = pose_sequence["data"].reshape(batch_size, seq_length, -1)
+
         # Encode pose sequence
         pose_embedding = self.pose_projection(flat_pose_data) + self.alpha_pose*positional_embedding
         pose_text_sequence = torch.cat([pose_embedding, text_encoding["data"], step_encoding], dim=1)
@@ -102,6 +102,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         pose_encoding = self.pose_encoder(
             pose_text_sequence.transpose(0, 1), src_key_padding_mask=pose_text_mask
         ).transpose(0, 1)[:, :seq_length, :]
+
         # Predict desired change
         flat_pose_projection = self.pose_diff_projection(pose_encoding)
         return flat_pose_projection.reshape(batch_size, seq_length, *self.pose_dims)
@@ -117,6 +118,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         }
         positions = torch.arange(0, min(sequence_length, self.max_seq_size), dtype=torch.long, device=self.device)
         positional_embedding = self.positional_embeddings(positions)
+
         step_num = 0
         while True:
             yield pose_sequence["data"][0]
@@ -129,12 +131,17 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             step_num += 1
 
     def training_step(self, batch, *unused_args):
-        return self.step(batch, *unused_args, name="train")
+        return self.step(batch, *unused_args, phase="train")
 
-    def validation_step(self, batch, *unused_args, steps=NUM_STEPS):
-        return self.step(batch, *unused_args, name="validation")
+    def validation_step(self, batch, *unused_args):
+        return self.step(batch, *unused_args, phase="validation")
 
-    def step(self, batch, *unused_args, name: str):
+    def step(self, batch, *unused_args, phase: str, gamma: float = 0.2):
+        """
+        @param batch: data batch
+        @param phase: either "train" or "validation"
+        @param gamma: float between 0 and 1, determines the weight of the sequence length loss
+        """
         text_encoding, sequence_length = self.encode_text(batch["text"])
         pose = batch["pose"]
 
@@ -160,21 +167,20 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             step_encoding = self.step_encoder(self.step_embedding(batch_step_num))
             l1_predicted = self.refine_pose_sequence(pose_sequence, text_encoding, positional_embedding,
                                                      step_encoding)
-            refinement_loss += masked_mse_loss(l1_gold, l1_predicted, confidence=pose["confidence"])
+            step_size = np.max((np.log(i) / np.log(self.num_steps), 0.1))
+            refinement_loss += masked_mse_loss(step_size*l1_gold, step_size*l1_predicted, confidence=pose["confidence"])
 
-            # step_shape = [batch_size, 1, 1, 1] # TODO- why is that the step size?
-            # step_size = 1 + torch.randn(step_shape, device=self.device) / self.num_steps
-            step_size = np.max((np.log(i)/np.log(self.num_steps), 0.1))
-            l1_step = l1_gold if name == "validation" else l1_predicted
+            teacher_forcing = torch.rand(1) < 0.5
+            l1_step = l1_gold if phase == "validation" or teacher_forcing else l1_predicted
             pose_sequence["data"] = pose_sequence["data"] + step_size * l1_step
 
-            if name == "train":  # add just a little noise while training
+            if phase == "train":  # add just a little noise while training
                 pose_sequence["data"] = pose_sequence["data"] + torch.randn_like(pose_sequence["data"]) * EPSILON
 
-        self.log(name + "_seq_length_loss", sequence_length_loss, batch_size=batch_size)
-        self.log(name + "_refinement_loss", refinement_loss, batch_size=batch_size)
-        loss = refinement_loss + sequence_length_loss
-        self.log(name + "_loss", loss, batch_size=batch_size)
+        self.log(phase + "_seq_length_loss", sequence_length_loss, batch_size=batch_size)
+        self.log(phase + "_refinement_loss", refinement_loss, batch_size=batch_size)
+        loss = refinement_loss + gamma*sequence_length_loss
+        self.log(phase + "_loss", loss, batch_size=batch_size)
         return loss
 
     def configure_optimizers(self):

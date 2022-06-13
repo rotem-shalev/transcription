@@ -119,10 +119,7 @@ if __name__ == '__main__':
 
     os.makedirs(args.pred_output, exist_ok=True)
 
-    dataset_name = "hamnosys"
-    args.pose = "openpose"
-    args.pose_components = None
-    dataset = get_dataset(name=dataset_name, poses=args.pose, fps=args.fps, components=args.pose_components,
+    dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps, components=args.pose_components,
                           max_seq_size=args.max_seq_size, split="train[:20]")
 
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
@@ -134,7 +131,8 @@ if __name__ == '__main__':
                       text_encoder_depth=args.text_encoder_depth,
                       pose_encoder_depth=args.pose_encoder_depth,
                       encoder_heads=args.encoder_heads,
-                      max_seq_size=args.max_seq_size)
+                      max_seq_size=args.max_seq_size,
+                      num_steps=args.num_steps)
 
     model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     model.eval()

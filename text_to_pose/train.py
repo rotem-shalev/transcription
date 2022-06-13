@@ -16,7 +16,7 @@ from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenize
 from text_to_pose.pred import pred
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
     LOGGER = None
     if not args.no_wandb:
@@ -24,19 +24,21 @@ if __name__ == '__main__':
         if LOGGER.experiment.sweep_id is None:
             LOGGER.log_hyperparams(args)
 
-    dataset_name = "hamnosys"
-    args.batch_size = 8
-    # args.gpus = 4
+    args.batch_size = 4
+    args.num_steps = 100
+    args.gpus = 4
 
-    train_dataset = get_dataset(name=dataset_name, poses=args.pose, fps=args.fps, components=args.pose_components,
+    train_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
+                                components=args.pose_components,
                                 max_seq_size=args.max_seq_size, split="train[10:]")
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8,
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, #num_workers=8,
                               shuffle=True, collate_fn=zero_pad_collator)
 
-    validation_dataset = get_dataset(name=dataset_name, poses=args.pose, fps=args.fps, components=args.pose_components,
+    validation_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
+                                     components=args.pose_components,
                                      max_seq_size=args.max_seq_size, split="train[:10]")
     validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size,
-                                   collate_fn=zero_pad_collator, num_workers=8)
+                                   collate_fn=zero_pad_collator)#, num_workers=8)
 
     _, num_pose_joints, num_pose_dims = train_dataset[0]["pose"]["data"].shape
 
@@ -47,10 +49,11 @@ if __name__ == '__main__':
                       text_encoder_depth=args.text_encoder_depth,
                       pose_encoder_depth=args.pose_encoder_depth,
                       encoder_heads=args.encoder_heads,
-                      max_seq_size=args.max_seq_size)
+                      max_seq_size=args.max_seq_size,
+                      num_steps=args.num_steps)
 
-    experiment_name = "test"
-    # args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
+    experiment_name = "predict_gradually_tf_seqlen_weight"
+    args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     if args.checkpoint is not None:
         model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     else:
@@ -69,12 +72,12 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=2,
+        max_epochs=200,
         logger=LOGGER,
         callbacks=callbacks,
         gpus=args.gpus,
-        accumulate_grad_batches=4,
-        # strategy="ddp"
+        accumulate_grad_batches=8,
+        strategy="ddp"
     )
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)

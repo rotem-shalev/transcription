@@ -22,11 +22,14 @@ parser.add_argument('--pose_components', type=list,
                     default=None,#["POSE_LANDMARKS", "LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"],  # ,
                     # "FACE_LANDMARKS"
                     help='what pose components to use?')
+parser.add_argument('--dataset', type=str, default='hamnosys', help='name of dataset')
+
 # Model Arguments
 parser.add_argument('--hidden_dim', type=int, default=128, help='encoder hidden dimension')
 parser.add_argument('--text_encoder_depth', type=int, default=2, help='number of layers for the text encoder')
 parser.add_argument('--pose_encoder_depth', type=int, default=4, help='number of layers for the pose encoder')
 parser.add_argument('--encoder_heads', type=int, default=2, help='number of heads for the encoder')
+parser.add_argument('--num_steps', type=int, default=50, help='number of pose refinement steps')
 
 # Prediction args
 parser.add_argument('--checkpoint', type=str, default=None, metavar='PATH', help="Checkpoint path for prediction")

@@ -60,3 +60,39 @@ def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train",
     data = [d for d in data if d["length"] < max_seq_size]
 
     return TextPoseDataset(data)
+
+
+#################################
+# Augmentations
+#################################
+
+#
+# class RepeatSign:
+#
+#     def __init__(self, p=0.5):
+#         self.p = p
+#
+#     def __call__(self, sample):
+#         REPEAT_FROM_START_CHAR = "\ue0d8"
+#         if REPEAT_FROM_START_CHAR in sample["text"] or torch.rand(1) < self.p:
+#             return sample
+#         new_text = sample["text"] + REPEAT_FROM_START_CHAR
+#         new_pose = sample["pose"]  # TODO
+#         new_sample = {
+#             "id": sample["id"],
+#             "text": new_text,
+#             "pose": new_pose
+#         }
+#         return new_sample
+#
+#
+# if __name__ == "__main__":
+#     import torchvision
+#     transform = torchvision.transforms.Compose([
+#         RepeatSign(p=1),
+#         torchvision.transforms.ToTensor(),
+#     ])
+#     test_dataset = get_dataset(name="hamnosys", poses="openpose", fps=25,
+#                                     components=None,
+#                                     max_seq_size=100, split="train[10:20]")
+#     transform(test_dataset[0])
