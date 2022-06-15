@@ -110,7 +110,6 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
     def forward(self, text: str, first_pose: torch.Tensor):
         text_encoding, sequence_length = self.encode_text([text])
         sequence_length = round(float(sequence_length))
-        batch_size = len(text_encoding['data'])
 
         pose_sequence = {
             "data": first_pose.expand(1, sequence_length, *self.pose_dims),
@@ -122,13 +121,29 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         step_num = 0
         while True:
             yield pose_sequence["data"][0]
-            batch_step_num = torch.repeat_interleave(torch.LongTensor([step_num]),
-                                                     batch_size).unsqueeze(1).to(self.device)
-            step_encoding = self.step_encoder(self.step_embedding(batch_step_num))
-            step = self.refine_pose_sequence(pose_sequence, text_encoding, positional_embedding, step_encoding)
-            step_size = np.log(step_num) / np.log(self.num_steps)
-            pose_sequence["data"] = pose_sequence["data"] + step_size * step
+            pose_sequence["data"] = self.refinement_step(step_num, pose_sequence, text_encoding,
+                                                         positional_embedding)[0]
             step_num += 1
+
+    def refinement_step(self, step_num, pose_sequence, text_encoding, positional_embedding):
+        batch_size = pose_sequence["data"].shape[0]
+        pose_sequence["data"] = pose_sequence["data"].detach()  # Detach from graph
+        batch_step_num = torch.repeat_interleave(torch.LongTensor([step_num]),
+                                                 batch_size).unsqueeze(1).to(self.device)
+        step_encoding = self.step_encoder(self.step_embedding(batch_step_num))
+        change_pred = self.refine_pose_sequence(pose_sequence, text_encoding, positional_embedding,
+                                                 step_encoding)
+        cur_step_size = self.get_step_size(step_num)
+        prev_step_size = self.get_step_size(step_num-1) if step_num > 1 else 0
+        step_size = cur_step_size-prev_step_size
+        pred = (1-step_size) * pose_sequence["data"] + step_size * change_pred
+        return pred, cur_step_size
+
+    def get_step_size(self, step_num):
+        if step_num < 2:
+            return 0.1
+        else:
+            return np.log(step_num) / np.log(self.num_steps)
 
     def training_step(self, batch, *unused_args):
         return self.step(batch, *unused_args, phase="train")
@@ -160,19 +175,12 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
 
         refinement_loss = 0
         for i in range(self.num_steps):
-            pose_sequence["data"] = pose_sequence["data"].detach()  # Detach from graph
-            l1_gold = pose["data"] - pose_sequence["data"]
-            batch_step_num = torch.repeat_interleave(torch.LongTensor([i]),
-                                                     batch_size).unsqueeze(1).to(self.device)
-            step_encoding = self.step_encoder(self.step_embedding(batch_step_num))
-            l1_predicted = self.refine_pose_sequence(pose_sequence, text_encoding, positional_embedding,
-                                                     step_encoding)
-            step_size = np.max((np.log(i) / np.log(self.num_steps), 0.1))
-            refinement_loss += masked_mse_loss(step_size*l1_gold, step_size*l1_predicted, confidence=pose["confidence"])
+            pred, step_size = self.refinement_step(i, pose_sequence, text_encoding, positional_embedding)
+            l1_gold = step_size * pose["data"] + (1 - step_size) * pose_sequence["data"]
+            refinement_loss += masked_mse_loss(l1_gold, pred, confidence=pose["confidence"])
 
             teacher_forcing = torch.rand(1) < 0.5
-            l1_step = l1_gold if phase == "validation" or teacher_forcing else l1_predicted
-            pose_sequence["data"] = pose_sequence["data"] + step_size * l1_step
+            pose_sequence["data"] = l1_gold if phase == "validation" or teacher_forcing else pred
 
             if phase == "train":  # add just a little noise while training
                 pose_sequence["data"] = pose_sequence["data"] + torch.randn_like(pose_sequence["data"]) * EPSILON

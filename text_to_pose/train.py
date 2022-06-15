@@ -16,7 +16,8 @@ from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenize
 from text_to_pose.pred import pred
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"#"0,1,2,3"
+    # args.gpus = 4
 
     LOGGER = None
     if not args.no_wandb:
@@ -26,7 +27,6 @@ if __name__ == '__main__':
 
     args.batch_size = 4
     args.num_steps = 100
-    args.gpus = 4
 
     train_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
                                 components=args.pose_components,
@@ -52,7 +52,7 @@ if __name__ == '__main__':
                       max_seq_size=args.max_seq_size,
                       num_steps=args.num_steps)
 
-    experiment_name = "predict_gradually_tf_seqlen_weight"
+    experiment_name = "new_step_method2"
     args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     if args.checkpoint is not None:
         model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=200,
+        max_epochs=100,
         logger=LOGGER,
         callbacks=callbacks,
         gpus=args.gpus,
@@ -82,4 +82,5 @@ if __name__ == '__main__':
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)
     output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}"
+    pred(model, train_dataset, output_dir)
     pred(model, validation_dataset, output_dir)

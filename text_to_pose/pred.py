@@ -22,8 +22,12 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Only use CPU
 
 def visualize_pose(poses: List[Pose], pose_name: str, output_dir: str):
     f_name = os.path.join(output_dir, pose_name)
-    width = max(poses[0].header.dimensions.width, poses[1].header.dimensions.width) * 2
-    height = max(poses[0].header.dimensions.height, poses[1].header.dimensions.height) + 40
+    if len(poses) == 1:
+        width = poses[0].header.dimensions.width
+        height = poses[0].header.dimensions.height + 40
+    else:
+        width = max(poses[0].header.dimensions.width, poses[1].header.dimensions.width) * 2
+        height = max(poses[0].header.dimensions.height, poses[1].header.dimensions.height) + 40
 
     font = cv2.FONT_HERSHEY_SIMPLEX
     color = (0, 250, 0)
@@ -36,7 +40,7 @@ def visualize_pose(poses: List[Pose], pose_name: str, output_dir: str):
         pose = pose.normalize(normalization_info, scale_factor=100)
         pose.focus()
         # width and height may change after normalization
-        width = max(width, pose.header.dimensions.width*2)
+        width = max(width, pose.header.dimensions.width*len(poses))
         height = max(height, pose.header.dimensions.height+40)
 
         # Draw pose
@@ -47,22 +51,24 @@ def visualize_pose(poses: List[Pose], pose_name: str, output_dir: str):
             image_size = (width, height)
             out = cv2.VideoWriter(f_name, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), poses[0].body.fps, image_size)
             for i, frame in enumerate(tqdm(visualizer.draw())):
-                empty = np.full((image_size[1], image_size[0]//2, 3), 255, dtype=np.uint8)
-                if len(frames) > i:
-                    empty[40:frames[i].shape[0]+40, :frames[i].shape[1]] = frames[i]
-                label_frame = empty
-                empty2 = np.full((image_size[1], image_size[0]//2, 3), 255, dtype=np.uint8)
-                empty2[40:frame.shape[0]+40, :frame.shape[1]] = frame
-                frame = empty2
+                if len(poses) == 1:
+                    out.write(frames[i])
+                else:
+                    empty = np.full((image_size[1], image_size[0]//2, 3), 255, dtype=np.uint8)
+                    if len(frames) > i:
+                        empty[40:frames[i].shape[0]+40, :frames[i].shape[1]] = frames[i]
+                    label_frame = empty
+                    empty2 = np.full((image_size[1], image_size[0]//2, 3), 255, dtype=np.uint8)
+                    empty2[40:frame.shape[0]+40, :frame.shape[1]] = frame
+                    frame = empty2
 
-                label_pred_im = np.concatenate((label_frame, frame), axis=1)
-
-                label_pred_im = cv2.putText(label_pred_im, "label", (image_size[0]//5, 30), font, 1, color, 2, 0)
-                label_pred_im = cv2.putText(label_pred_im, "pred", (image_size[0]//5 + image_size[0]//2, 30),
-                                            font, 1, color, 2, 0)
-                # plt.imshow(label_pred_im)
-                # plt.show()
-                out.write(label_pred_im)
+                    label_pred_im = np.concatenate((label_frame, frame), axis=1)
+                    label_pred_im = cv2.putText(label_pred_im, "label", (image_size[0]//5, 30), font, 1,
+                                                color, 2, 0)
+                    label_pred_im = cv2.putText(label_pred_im, "pred",
+                                                (image_size[0]//5 + image_size[0]//2, 30),
+                                                font, 1, color, 2, 0)
+                    out.write(label_pred_im)
 
             out.release()
     # visualizer.save_video(os.path.join(args.pred_output, pose_name),
@@ -82,6 +88,17 @@ def visualize_poses(_id: str, text: str, poses: List[Pose]) -> str:
     return html_tags
 
 
+def visualize_seq(seq, pose_header, output_dir, id, label_pose=None, fps=25):
+    data = torch.unsqueeze(seq, 1).cpu()
+    conf = torch.ones_like(data[:, :, :, 0])
+    pose_body = NumPyPoseBody(fps, data.numpy(), conf.numpy())
+    predicted_pose = Pose(pose_header, pose_body)
+    pose_hide_legs(predicted_pose)
+
+    pose_name = f"{id}.mp4"
+    visualize_pose([label_pose, predicted_pose], pose_name, output_dir)
+
+
 def pred(model, dataset, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
@@ -89,20 +106,15 @@ def pred(model, dataset, output_dir):
 
     model.eval()
     with torch.no_grad():
-        for datum in dataset:
+        for i, datum in enumerate(dataset):
+            if i > 10:
+                break
             first_pose = datum["pose"]["data"][0]
             seq_iter = model.forward(text=datum["text"], first_pose=first_pose)
             for i in range(model.num_steps):
                 seq = next(seq_iter)
 
-            data = torch.unsqueeze(seq, 1).cpu()
-            conf = torch.ones_like(data[:, :, :, 0])
-            pose_body = NumPyPoseBody(args.fps, data.numpy(), conf.numpy())
-            predicted_pose = Pose(pose_header, pose_body)
-            pose_hide_legs(predicted_pose)
-
-            pose_name = f"{datum['id']}.mp4"
-            visualize_pose([datum["pose"]["obj"], predicted_pose], pose_name, output_dir)
+            visualize_seq(seq, pose_header, output_dir, datum["id"], datum["pose"]["obj"])
 
 
 if __name__ == '__main__':
