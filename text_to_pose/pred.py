@@ -14,7 +14,6 @@ from pose_format.pose_visualizer import PoseVisualizer
 from shared.pose_utils import pose_normalization_info, pose_hide_legs
 from text_to_pose.args import args
 from text_to_pose.data import get_dataset
-from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
 from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Only use CPU
@@ -118,6 +117,8 @@ def pred(model, dataset, output_dir):
 
 
 if __name__ == '__main__':
+    from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
+
     args.checkpoint = "/home/nlp/rotemsh/transcription/text_to_pose/models/20_steps/model-v2.ckpt"
     args.pred_output = "/home/nlp/rotemsh/transcription/videos/20_steps"
     args.ffmpeg_path = "/home/nlp/rotemsh/ffmpeg-5.0.1-amd64-static/"

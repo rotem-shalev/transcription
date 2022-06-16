@@ -1,12 +1,15 @@
-from typing import List
+from text_to_pose.pred import visualize_seq
 
+from typing import List
 import torch
 from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import numpy as np
+import os
 
 EPSILON = 1e-4
+output_dir_base = f"/home/nlp/rotemsh/transcription/text_to_pose/videos"
 
 
 def masked_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torch.Tensor):
@@ -151,11 +154,12 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
     def validation_step(self, batch, *unused_args):
         return self.step(batch, *unused_args, phase="validation")
 
-    def step(self, batch, *unused_args, phase: str, gamma: float = 0.2):
+    def step(self, batch, *unused_args, phase: str, gamma: float = 0.2, k: int = 50):
         """
         @param batch: data batch
         @param phase: either "train" or "validation"
-        @param gamma: float between 0 and 1, determines the weight of the sequence length loss
+        @param gamma: float between 0 and 1, determines the weight of the sequence length loss. default is 0.2.
+        @param k: visualize every k epochs. default is 50.
         """
         text_encoding, sequence_length = self.encode_text(batch["text"])
         pose = batch["pose"]
@@ -189,6 +193,12 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         self.log(phase + "_refinement_loss", refinement_loss, batch_size=batch_size)
         loss = refinement_loss + gamma*sequence_length_loss
         self.log(phase + "_loss", loss, batch_size=batch_size)
+
+        if self.current_epoch % k == 0:
+            output_dir = os.path.join(output_dir_base, self.logger.experiment.id,
+                                      f"{phase}_{self.current_epoch}")
+            os.makedirs(output_dir, exist_ok=True)
+            visualize_seq(pose_sequence["data"][0], pose["obj"][0].header, output_dir, batch["id"][0], pose["obj"][0])
         return loss
 
     def configure_optimizers(self):

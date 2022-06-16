@@ -15,13 +15,16 @@ from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
 from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
 from text_to_pose.pred import pred
 
+
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"#"0,1,2,3"
-    # args.gpus = 4
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    experiment_name = "test"#"new_step_method2"
+    if experiment_name != "test":
+        args.gpus = 4
 
     LOGGER = None
     if not args.no_wandb:
-        LOGGER = WandbLogger(project="text-to-pose", log_model=False, offline=False)
+        LOGGER = WandbLogger(project="text-to-pose", log_model=False, offline=False, id=experiment_name)
         if LOGGER.experiment.sweep_id is None:
             LOGGER.log_hyperparams(args)
 
@@ -52,7 +55,6 @@ if __name__ == '__main__':
                       max_seq_size=args.max_seq_size,
                       num_steps=args.num_steps)
 
-    experiment_name = "new_step_method2"
     args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     if args.checkpoint is not None:
         model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
@@ -63,7 +65,7 @@ if __name__ == '__main__':
     if LOGGER is not None:
         os.makedirs("models", exist_ok=True)
         callbacks.append(ModelCheckpoint(
-            dirpath="models/" + experiment_name,#LOGGER.experiment.id,
+            dirpath="models/" + experiment_name,
             filename="model",
             verbose=True,
             save_top_k=1,
@@ -72,7 +74,7 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=100,
+        max_epochs=20,
         logger=LOGGER,
         callbacks=callbacks,
         gpus=args.gpus,
