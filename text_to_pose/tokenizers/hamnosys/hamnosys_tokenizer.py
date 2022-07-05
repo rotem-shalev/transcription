@@ -6,6 +6,8 @@ from fontTools.ttLib import TTFont
 
 from shared.collator import zero_pad_collator
 
+MAX_TEXT_LEN = 100
+
 
 class HamNoSysTokenizer:
 

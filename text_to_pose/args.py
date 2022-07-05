@@ -15,7 +15,7 @@ parser.add_argument('--gpus', type=int, default=1, help='how many gpus')
 parser.add_argument('--batch_size', type=int, default=32, help='batch size')
 
 # Data Arguments
-parser.add_argument('--max_seq_size', type=int, default=100, help='input sequence size')
+parser.add_argument('--max_seq_size', type=int, default=200, help='input sequence size')
 parser.add_argument('--fps', type=int, default=25, help='fps to load')
 parser.add_argument('--pose', choices=['holistic', 'openpose'], default='openpose', help='which pose estimation')
 parser.add_argument('--pose_components', type=list,
@@ -30,6 +30,7 @@ parser.add_argument('--text_encoder_depth', type=int, default=2, help='number of
 parser.add_argument('--pose_encoder_depth', type=int, default=4, help='number of layers for the pose encoder')
 parser.add_argument('--encoder_heads', type=int, default=2, help='number of heads for the encoder')
 parser.add_argument('--num_steps', type=int, default=50, help='number of pose refinement steps')
+parser.add_argument('--tf_p', type=float, default=0.5, help='percentage of teacher_forcing during training')
 
 # Prediction args
 parser.add_argument('--checkpoint', type=str, default=None, metavar='PATH', help="Checkpoint path for prediction")

@@ -4,8 +4,6 @@ import tensorflow_datasets as tfds
 import tensorflow as tf
 from os import path
 import json
-import numpy as np
-import numpy.ma as ma
 
 from typing import Dict
 from pose_format.utils.openpose import load_openpose
@@ -13,14 +11,14 @@ from pose_format.pose import Pose
 
 import os
 import sys
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 sys.path.append(os.path.join(os.path.dirname(SCRIPT_DIR), ".."))
 sys.path.append(os.path.join(os.path.dirname(SCRIPT_DIR), "..", "utils"))
 
-from ..config import SignDatasetConfig
-from ..utils.features import PoseFeature
-
+from ..config import SignDatasetConfig  # for compilation remove ".."
+from ..utils.features import PoseFeature  # for compilation remove ".."
 
 _DESCRIPTION = """
 Combined corpus of videos with their openPose keypoints and HamNoSys. 
@@ -66,14 +64,14 @@ def get_pose(keypoints_path: str, fps: int) -> Dict[str, Pose]:
     :return: Dictionary of Pose object with a header specific to OpenPose and a body that contains a
     single array.
     """
-
+    fps = 25
     files = sorted(tf.io.gfile.listdir(keypoints_path))
     frames = dict()
     try:
         for i, file in enumerate(files):
             with tf.io.gfile.GFile(path.join(keypoints_path, file), "r") as openpose_raw:
                 frame_json = json.load(openpose_raw)
-                frames[i] = {"people": frame_json["people"], "frame_id": i}
+                frames[i] = {"people": frame_json["people"][:1], "frame_id": i}
     except:
         print(keypoints_path)
         return None
@@ -94,19 +92,19 @@ class Hamnosys(tfds.core.GeneratorBasedBuilder):
     }
 
     BUILDER_CONFIGS = [
-        SignDatasetConfig(name="default", include_video=False, include_pose="openpose"),
+        SignDatasetConfig(name="default", include_video=False, include_pose="openpose", fps=25),
         SignDatasetConfig(name="videos", include_video=True, include_pose="openpose"),
     ]
 
     def _info(self) -> tfds.core.DatasetInfo:
         """Returns the dataset metadata."""
         pose_header_path = _POSE_HEADERS[self._builder_config.include_pose]
-        stride = 1 if self._builder_config.fps is None else 50 / self._builder_config.fps
+        stride = 1 #if self._builder_config.fps is None else 50 / self._builder_config.fps
         pose_shape = (None, 1, 137, 2)
 
         features = tfds.features.FeaturesDict({
             "id": tfds.features.Text(),
-            "video": tfds.features.Text(), #tfds.features.Video(shape=(None, MAX_HEIGHT, MAX_WIDTH, 3)),
+            "video": tfds.features.Text(),  # tfds.features.Video(shape=(None, MAX_HEIGHT, MAX_WIDTH, 3)),
             "fps": tf.int32,
             "pose": PoseFeature(shape=pose_shape, stride=stride, header_path=pose_header_path),
             "hamnosys": tfds.features.Text(),
@@ -147,4 +145,4 @@ class Hamnosys(tfds.core.GeneratorBasedBuilder):
                 "hamnosys": val["hamnosys"],
                 "text": val["type_name"]
             }
-            yield key, features  # TODO- should key be running id?
+            yield key, features

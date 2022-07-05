@@ -5,18 +5,20 @@ from pose_format.torch.masked import MaskedTensor, MaskedTorch
 import numpy as np
 
 
-def zero_pad_collator(batch) -> Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]]:
+def zero_pad_collator(batch, default_max=-1) -> Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]]:
     def collate_tensors(batch: List) -> torch.Tensor:
         datum = batch[0]
 
         if isinstance(datum, dict):  # Recurse over dictionaries
-            return zero_pad_collator(batch)
+            return zero_pad_collator(batch, default_max)
 
         if isinstance(datum, (int, np.int32)):
             return torch.tensor(batch, dtype=torch.long)
 
         if isinstance(datum, (MaskedTensor, torch.Tensor)):
-            max_len = max([len(t) for t in batch])
+            max_len = max([len(t) for t in batch]) if default_max == -1 else default_max
+            if max([len(t) for t in batch]) > max_len:
+                print("bigger max: ", max([len(t) for t in batch]))
             if max_len == 1:
                 return torch.stack(batch)
 

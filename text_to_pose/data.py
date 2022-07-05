@@ -44,17 +44,26 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
     text = datum["tf_datum"]["hamnosys"].numpy().decode('utf-8').strip()
     pose: Pose = datum["pose"]
 
-    return {
+    # Prune all leading frames containing only zeros
+    for i in range(len(pose.body.data)):
+        if pose.body.confidence[i].sum() != 0:
+            if i != 0:
+                pose.body.data = pose.body.data[i:]
+                pose.body.confidence = pose.body.confidence[i:]
+            break
+
+    return TextPoseDatum({
         "id": datum["id"],
         "text": text,
         "pose": pose,
         "length": max(len(pose.body.data), len(text))
-    }
+        })
 
 
 def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train",
-                components: List[str] = None, data_dir=None, max_seq_size=1000):
-    data = get_tfds_dataset(name=name, poses=poses, fps=fps, split=split, components=components, data_dir=data_dir)
+                components: List[str] = None, data_dir=None, max_seq_size=1000, no_flip=False):
+    data = get_tfds_dataset(name=name, poses=poses, fps=fps, split=split, components=components, data_dir=data_dir,
+                            no_flip=no_flip)
 
     data = [process_datum(d) for d in data]
     data = [d for d in data if d["length"] < max_seq_size]

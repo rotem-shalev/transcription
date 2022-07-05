@@ -53,7 +53,7 @@ def pose_normalization_info(pose_header: PoseHeader):
     raise ValueError("Unknown pose header schema for normalization")
 
 
-def fake_pose(num_frames: int, fps=25):
+def fake_pose(num_frames: int, fps: int = 25):
     dimensions = PoseHeaderDimensions(width=1, height=1, depth=1)
     header = PoseHeader(version=0.1, dimensions=dimensions, components=OpenPose_Components)
 
