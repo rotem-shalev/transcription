@@ -30,7 +30,6 @@ class SignDatasetConfig(tfds.core.BuilderConfig):
         self.include_video = include_video
         self.process_video = process_video
         self.include_pose = include_pose.lower() if include_pose is not None else None
-
         self.fps = fps
         self.resolution = resolution
         self.extra = extra

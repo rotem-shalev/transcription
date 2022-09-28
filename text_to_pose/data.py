@@ -22,8 +22,10 @@ class TextPoseDataset(Dataset):
 
     def __getitem__(self, index):
         datum = self.data[index]
-        pose = datum["pose"]
+        if "pose" not in datum:
+            return datum
 
+        pose = datum["pose"]
         torch_body = pose.body.torch()
         pose_length = len(torch_body.data)
 
@@ -41,15 +43,33 @@ class TextPoseDataset(Dataset):
 
 
 def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
-    text = datum["tf_datum"]["hamnosys"].numpy().decode('utf-8').strip()
+    text = datum["tf_datum"]["hamnosys"].numpy().decode('utf-8').strip() if "hamnosys" in datum["tf_datum"] else ""
+    if "pose" not in datum:
+        return TextPoseDatum({
+            "id": datum["id"],
+            "text": text,
+            "pose_len": float(datum["tf_datum"]["pose_len"].numpy()),
+            "length": max(datum["tf_datum"]["pose_len"], len(text))
+        })
+
     pose: Pose = datum["pose"]
 
-    # Prune all leading frames containing only zeros
+    # Prune all leading frames containing only zeros, almost no face, or no hands
     for i in range(len(pose.body.data)):
-        if pose.body.confidence[i].sum() != 0:
+        if pose.body.confidence[i][:, 25:-42].sum() > 35 and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > 0:
             if i != 0:
                 pose.body.data = pose.body.data[i:]
                 pose.body.confidence = pose.body.confidence[i:]
+            break
+
+    # Prune all trailing frames containing only zeros, almost no face, or no hands
+    for i in range(len(pose.body.data) - 1, 0, -1):
+        if pose.body.confidence[i][:, 25:-42].sum() > 35 and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > 0:
+            if i != len(pose.body.data) - 1:
+                pose.body.data = pose.body.data[:i + 1]
+                pose.body.confidence = pose.body.confidence[:i + 1]
             break
 
     return TextPoseDatum({
@@ -57,19 +77,21 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
         "text": text,
         "pose": pose,
         "length": max(len(pose.body.data), len(text))
-        })
+    })
 
 
-def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train",
-                components: List[str] = None, data_dir=None, max_seq_size=1000, no_flip=False):
-    data = get_tfds_dataset(name=name, poses=poses, fps=fps, split=split, components=components, data_dir=data_dir,
-                            no_flip=no_flip)
+def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train", include_low_conf_vids=True,
+                use_relative_pose=False, exclude=False, components: List[str] = None, data_dir=None,
+                max_seq_size=200, no_flip=False):
+
+    data = get_tfds_dataset(name=name, poses=poses, fps=fps, split=split, components=components,
+                            exclude=exclude, data_dir=data_dir, no_flip=no_flip,
+                            include_low_conf_vids=include_low_conf_vids, use_relative_pose=use_relative_pose)
 
     data = [process_datum(d) for d in data]
     data = [d for d in data if d["length"] < max_seq_size]
 
     return TextPoseDataset(data)
-
 
 #################################
 # Augmentations

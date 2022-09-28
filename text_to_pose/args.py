@@ -11,8 +11,9 @@ parser = ArgumentParser()
 parser.add_argument('--no_wandb', type=bool, default=False, help='ignore wandb?')
 # Training Arguments
 parser.add_argument('--seed', type=int, default=42, help='random seed')
-parser.add_argument('--gpus', type=int, default=1, help='how many gpus')
+parser.add_argument('--gpus', type=int, default=1, help='how many gpus?')
 parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+parser.add_argument('--masked_loss', type=bool, default=True, help='mask loss by confidence?')
 
 # Data Arguments
 parser.add_argument('--max_seq_size', type=int, default=200, help='input sequence size')
@@ -29,8 +30,12 @@ parser.add_argument('--hidden_dim', type=int, default=128, help='encoder hidden 
 parser.add_argument('--text_encoder_depth', type=int, default=2, help='number of layers for the text encoder')
 parser.add_argument('--pose_encoder_depth', type=int, default=4, help='number of layers for the pose encoder')
 parser.add_argument('--encoder_heads', type=int, default=2, help='number of heads for the encoder')
-parser.add_argument('--num_steps', type=int, default=50, help='number of pose refinement steps')
+parser.add_argument('--num_steps', type=int, default=10, help='number of pose refinement steps')
 parser.add_argument('--tf_p', type=float, default=0.5, help='percentage of teacher_forcing during training')
+parser.add_argument('--separate_positional_embedding', type=bool, default=True, help='separate positional embeddings '
+                                                                                     'between text and pose?')
+parser.add_argument('--num_pose_projection_layers', type=int, default=1, help='number of pose projection layers')
+parser.add_argument('--encoder_dim_feedforward', type=int, default=2048, help='size of encoder dim feedforward')
 
 # Prediction args
 parser.add_argument('--checkpoint', type=str, default=None, metavar='PATH', help="Checkpoint path for prediction")

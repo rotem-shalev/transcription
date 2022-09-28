@@ -45,7 +45,15 @@ class HamNoSysTokenizer:
 
 if __name__ == "__main__":
     tokenizer = HamNoSysTokenizer()
-    print(tokenizer([
-        "\ue000\ue071",
-        "\ue000\ue071\ue012\ue029\ue03f\ue089\ue0c6\ue0d8"
-    ]))
+    hamnosys = [
+        # "",  # bsl one
+        # "",  # gsl one
+        ""  # bsl accept
+        # "\ue000\ue071",
+        # "\ue000\ue071\ue012\ue029\ue03f\ue089\ue0c6\ue0d8 \ue000\ue071"
+    ]
+    print(hamnosys)
+    print(tokenizer(hamnosys))
+    # with TTFont(Path(__file__).parent.joinpath("HamNoSysUnicode.ttf")) as font:
+    #     for key, val in font["cmap"].getBestCmap().items():
+    #         print(key, val, chr(key))

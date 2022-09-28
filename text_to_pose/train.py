@@ -4,6 +4,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
+import tensorflow_datasets as tfds
+from torch.optim import Adam, SGD
 
 import sys
 sys.path.insert(0, '/home/nlp/rotemsh/transcription')
@@ -14,13 +16,17 @@ from text_to_pose.data import get_dataset
 from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
 from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
 from text_to_pose.pred import pred, vis_label_only
+from text_to_pose.constants import num_steps_to_batch_size, batch_size_to_accumulate, DATASET_SIZE
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
-    experiment_name = "learned_first_pose_tf_step_level_flipped_left_pjms_max_seq_200_train_seq_len_every_5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"#"0"
+    args.gpus = 1
+    experiment_name = "reproduce_exclude_sep_2"
     print("experiment_name:", experiment_name)
+
     if experiment_name != "test":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
         args.gpus = 4
 
     LOGGER = None
@@ -28,43 +34,51 @@ if __name__ == '__main__':
         LOGGER = WandbLogger(project="text-to-pose", log_model=False, offline=False, id=experiment_name)
         if LOGGER.experiment.sweep_id is None:
             LOGGER.log_hyperparams(args)
-
-    args.num_steps = 10
-    num_steps_to_batch_size = {10: 16, 50: 8, 100: 4}
-    batch_size_to_accumulate = {16: 2, 8: 4, 4: 8}
     args.batch_size = num_steps_to_batch_size[args.num_steps]
-    args.tf_p = 0.5
-    # args.masked_loss = False
+    # args.pose_components = ['hand_left_keypoints_2d', 'hand_right_keypoints_2d']
 
-    DATASET_SIZE = 5985
     test_size = int(0.1*DATASET_SIZE)
     print("test size", test_size)
+    train_split = f'test[{test_size}:]+train'
+    test_split = f'test[:{test_size}]'
+    if experiment_name == "test":
+        train_split = f"test[{test_size}:{test_size+50}]"
+        test_split = train_split
     train_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
-                                components=args.pose_components,
-                                max_seq_size=args.max_seq_size, split=f"train[{test_size}:]")
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, #num_workers=8,
+                                components=args.pose_components, exclude=True,
+                                max_seq_size=args.max_seq_size, split=train_split)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, collate_fn=zero_pad_collator)
+    print("train set size:", len(train_dataset))
 
     validation_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
-                                     components=args.pose_components,
-                                     max_seq_size=args.max_seq_size, split=f"train[:{test_size}]")
+                                     components=args.pose_components, exclude=True,
+                                     max_seq_size=args.max_seq_size, split=test_split)
     validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size,
-                                   collate_fn=zero_pad_collator)#, num_workers=8)
+                                   collate_fn=zero_pad_collator)
 
     _, num_pose_joints, num_pose_dims = train_dataset[0]["pose"]["data"].shape
 
     # Model Arguments
     model_args = dict(tokenizer=HamNoSysTokenizer(),
                       pose_dims=(num_pose_joints, num_pose_dims),
-                      hidden_dim=args.hidden_dim,
+                      hidden_dim=128,#256,#args.hidden_dim,
                       text_encoder_depth=args.text_encoder_depth,
                       pose_encoder_depth=args.pose_encoder_depth,
-                      encoder_heads=args.encoder_heads,
+                      encoder_heads=args.encoder_heads, #4,
+                      # encoder_dim_feedforward=512,
                       max_seq_size=args.max_seq_size,
                       num_steps=args.num_steps,
-                      tf_p=args.tf_p)
+                      tf_p=args.tf_p,
+                      masked_loss=args.masked_loss,
+                      optimizer_fn=Adam,  # TODO- convert to arg
+                      separate_positional_embedding=args.separate_positional_embedding,
+                      num_pose_projection_layers=1,#2,
+                      do_pose_self_attention=False,#True,
+                      use_transformer_decoder=False,#True,
+                      concat=True)
 
-    # args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
+    # args.checkpoint = f"models/{experiment_name}/model.ckpt"
     if args.checkpoint is not None:
         model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     else:
@@ -83,7 +97,7 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=2500,
+        max_epochs=2000,
         logger=LOGGER,
         callbacks=callbacks,
         gpus=args.gpus,
@@ -94,10 +108,10 @@ if __name__ == '__main__':
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)
 
     # eval part- take best model saved
-    args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
+    args.checkpoint = f"models/{experiment_name}/model.ckpt"
     model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     model.eval()
 
     output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}"
-    pred(model, train_dataset, os.path.join(output_dir, "train"))
-    pred(model, validation_dataset, os.path.join(output_dir, "val"))
+    pred(model, train_dataset, os.path.join(output_dir, "train"), use_learned_first_pose=False)
+    pred(model, validation_dataset, os.path.join(output_dir, "val"), use_learned_first_pose=False)
