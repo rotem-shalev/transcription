@@ -82,7 +82,7 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
 
 def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train", include_low_conf_vids=True,
                 use_relative_pose=False, exclude=False, components: List[str] = None, data_dir=None,
-                max_seq_size=200, no_flip=False):
+                max_seq_size=200, no_flip=False, leave_out=""):
 
     data = get_tfds_dataset(name=name, poses=poses, fps=fps, split=split, components=components,
                             exclude=exclude, data_dir=data_dir, no_flip=no_flip,
@@ -90,7 +90,17 @@ def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train", incl
 
     data = [process_datum(d) for d in data]
     data = [d for d in data if d["length"] < max_seq_size]
-
+    if leave_out != "":
+        if leave_out == "dgs":
+            train_data = [d for d in data if not d["id"].isnumeric()]
+            test_data = [d for d in data if d["id"].isnumeric()]
+        elif leave_out == "lsf":
+            train_data = [d for d in data if any(i.isdigit() for i in d["id"])]
+            test_data = [d for d in data if not any(i.isdigit() for i in d["id"])]
+        else:
+            train_data = [d for d in data if leave_out not in d["id"]]
+            test_data = [d for d in data if leave_out in d["id"]]
+        return TextPoseDataset(train_data), TextPoseDataset(test_data)
     return TextPoseDataset(data)
 
 #################################

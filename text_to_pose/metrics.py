@@ -119,9 +119,9 @@ def measure_distance(pose1_id, pose2_id, keypoints_path):
     pose2_body = pose2.body.data.squeeze(1)
 
     if pose1.body.data.shape[0] < pose2.body.data.shape[0]:
-        pose1_body = np.concatenate((pose1_body, np.zeros((seq_lens_diff, 137, 2))))
+        pose1_body = np.ma.concatenate((pose1_body, np.zeros((seq_lens_diff, 137, 2))))
     if pose2.body.data.shape[0] < pose1.body.data.shape[0]:
-        pose2_body = np.concatenate((pose2_body, np.zeros((seq_lens_diff, 137, 2))))
+        pose2_body = np.ma.concatenate((pose2_body, np.zeros((seq_lens_diff, 137, 2))))
 
     sum_pose_diff = np.sum((pose1_body - pose2_body) ** 2)
     mean_pose_diff = np.mean((pose1_body - pose2_body) ** 2)
@@ -218,12 +218,11 @@ def DTWdistance(trajectory1, trajectory2):
     for i in range(len(trajectory1)):
         for j in range(len(trajectory2)):
             if np.ma.is_masked(trajectory1[i]) and not np.ma.is_masked(trajectory2[j]):
-                cost = np.inf#trajectory2[j]
+                cost = 0#np.inf#trajectory2[j]
             elif not np.ma.is_masked(trajectory1[i]) and np.ma.is_masked(trajectory2[j]):
-                cost = np.inf#trajectory1[i]
+                cost = 0#np.inf#trajectory1[i]
             elif np.ma.is_masked(trajectory1[i]) and np.ma.is_masked(trajectory2[j]):
                 cost = 0
-                assert "Shouldn't happen!"
             else:
                 cost = np.sqrt((trajectory1[i][0]-trajectory2[j][0])**2+(trajectory1[i][1]-trajectory2[j][1])**2)
             if i != 0 and j != 0:
@@ -242,20 +241,26 @@ def DTWdistance(trajectory1, trajectory2):
     return DTW[-1, -1]
 
 
-def masked_euclidean(series1, series2):
-    d = euclidean(series1, series2)
-    if np.isnan(d):
-        return np.infty
+def masked_euclidean(point1, point2):
+    if np.ma.is_masked(point1) or np.ma.is_masked(point2):
+        return 0#np.infty
+    d = euclidean(point1, point2)
+    # if np.isnan(d):
+    #     return np.infty
     return d
 
 
-def compare_pose_videos(pose1_id, pose2_id, keypoints_path, distance_function):
+def compare_pose_videos(pose1_id, pose2_id, keypoints_path, distance_function=fastdtw):
     pose1 = get_pose(os.path.join(keypoints_path, pose1_id), pose1_id)
     pose2 = get_pose(os.path.join(keypoints_path, pose2_id), pose2_id)
-    pose1_data_normalized = np.concatenate([pose1.body.data[:, :, :95] - pose1.body.data[0, 0, 0],
+    return compare_poses(pose1, pose2, distance_function)
+
+
+def compare_poses(pose1, pose2, distance_function=fastdtw):
+    pose1_data_normalized = np.ma.concatenate([pose1.body.data[:, :, :95] - pose1.body.data[0, 0, 0],
                                             pose1.body.data[:, :, 95:116] - pose1.body.data[0, 0, 95],
                                             pose1.body.data[:, :, 116:] - pose1.body.data[0, 0, 116]], axis=2)
-    pose2_data_normalized = np.concatenate([pose2.body.data[:, :, :95] - pose2.body.data[0, 0, 0],
+    pose2_data_normalized = np.ma.concatenate([pose2.body.data[:, :, :95] - pose2.body.data[0, 0, 0],
                                             pose2.body.data[:, :, 95:116] - pose2.body.data[0, 0, 95],
                                             pose2.body.data[:, :, 116:] - pose2.body.data[0, 0, 116]], axis=2)
 
@@ -271,6 +276,7 @@ def compare_pose_videos(pose1_id, pose2_id, keypoints_path, distance_function):
         dist = distance_function(pose1_keypoint_trajectory, pose2_keypoint_trajectory, dist=masked_euclidean)[0]
         total_distance += dist*weight
     return total_distance/len(idx2weight)
+
 
 
 def visualize_candidates(poses):  # TODO- doesn't work at the moment
@@ -390,10 +396,10 @@ def get_hamnosys_similarities(pickle_data_path="/home/nlp/rotemsh/slt/data/pose_
 
 def __compare_pred_to_video(pred, keypoints_path, pose_id, distance_function):
     label_pose = get_pose(os.path.join(keypoints_path, pose_id), pose_id)
-    pose1_data_normalized = np.concatenate([pred.body.data[:, :, :95] - pred.body.data[0, 0, 0],
+    pose1_data_normalized = np.ma.concatenate([pred.body.data[:, :, :95] - pred.body.data[0, 0, 0],
                                             pred.body.data[:, :, 95:116] - pred.body.data[0, 0, 95],
                                             pred.body.data[:, :, 116:] - pred.body.data[0, 0, 116]], axis=2)
-    pose2_data_normalized = np.concatenate([label_pose.body.data[:, :, :95] - label_pose.body.data[0, 0, 0],
+    pose2_data_normalized = np.ma.concatenate([label_pose.body.data[:, :, :95] - label_pose.body.data[0, 0, 0],
                                             label_pose.body.data[:, :, 95:116] - label_pose.body.data[0, 0, 95],
                                             label_pose.body.data[:, :, 116:] - label_pose.body.data[0, 0, 116]], axis=2)
 
@@ -415,43 +421,43 @@ def check_ranks(distances, index):
         rank_1 = True
         rank_5 = True
         rank_10 = True
-        print("\nindex in best 1")
+        # print("\nindex in best 1")
     elif index in distances[:5]:
         rank_5 = True
         rank_10 = True
-        print("\nindex in best 5")
+        # print("\nindex in best 5")
     elif index in distances:
         rank_10 = True
-        print("\nindex in best 10")
+        # print("\nindex in best 10")
     return rank_1, rank_5, rank_10
 
 
-def compare_poses(pred, pred_id, keypoints_path, data_ids, distance_function=fastdtw, num_samples=30):
+def get_poses_ranks(pred, pred_id, keypoints_path, data_ids, distance_function=fastdtw, num_samples=30):
     pred2label_distance = __compare_pred_to_video(pred, keypoints_path, pred_id, distance_function)
-    print(f"\ndistance between pred and label for {pred_id} is {pred2label_distance}")
+    # print(f"\ndistance between pred and label for {pred_id} is {pred2label_distance}")
 
     distances_to_label = [pred2label_distance]
     distances_to_pred = [pred2label_distance]
+    pred2label_index = 0
 
     pose_ids = random.sample(data_ids, num_samples)
     for i, pose_id in enumerate(pose_ids):
         distances_to_pred.append(__compare_pred_to_video(pred, keypoints_path, pose_id, distance_function))
         distances_to_label.append(compare_pose_videos(pose_id, pred_id, keypoints_path, distance_function))
 
-    pose_ids = [pred_id] + pose_ids
-
-    print("\n10 best sorted distances to pred")
+    # pose_ids = [pred_id] + pose_ids
+    # print("\n10 best sorted distances to pred")
     best_pred = np.argsort(distances_to_pred)[:10]
-    for i in best_pred:
-        print(f"{pose_ids[i]}, {distances_to_pred[i]}")
-    rank_1_pred, rank_5_pred, rank_10_pred = check_ranks(best_pred, 0)
-    print("\n10 best sorted distances to label")
+    # for i in best_pred:
+        # print(f"{pose_ids[i]}, {distances_to_pred[i]}")
+    rank_1_pred, rank_5_pred, rank_10_pred = check_ranks(best_pred, pred2label_index)
+    # print("\n10 best sorted distances to label")
     best_label = np.argsort(distances_to_label)[:10]
-    for i in best_label:
-        print(f"{pose_ids[i]}, {distances_to_label[i]}")
-    rank_1_label, rank_5_label, rank_10_label = check_ranks(best_label, 0)
+    # for i in best_label:
+    #     print(f"{pose_ids[i]}, {distances_to_label[i]}")
+    rank_1_label, rank_5_label, rank_10_label = check_ranks(best_label, pred2label_index)
 
-    return rank_1_pred, rank_5_pred, rank_10_pred, rank_1_label, rank_5_label, rank_10_label
+    return pred2label_distance, rank_1_pred, rank_5_pred, rank_10_pred, rank_1_label, rank_5_label, rank_10_label
 
 
 if __name__ == "__main__":

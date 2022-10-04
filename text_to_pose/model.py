@@ -172,15 +172,15 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         embedding = self.embedding(tokenized["tokens_ids"]) + positional_embedding
         encoded = self.text_encoder(embedding.transpose(0, 1),
                                     src_key_padding_mask=tokenized["attention_mask"]).transpose(0, 1)
-        seq_length = self.seq_length(encoded).mean(axis=1)
+        seq_length = self.seq_length(encoded).mean(axis=1).int()
         return {"data": encoded, "mask": tokenized["attention_mask"]}, seq_length
 
     def forward(self, text: str, first_pose: torch.Tensor = None, sequence_length: int = -1):
         # if first_pose is None:
         #     first_pose = self.first_pose
+
         text_encoding, seq_len = self.encode_text([text])
-        if sequence_length == -1:
-            sequence_length = round(float(seq_len))
+        sequence_length = seq_len if sequence_length == -1 else sequence_length
         sequence_length = min(sequence_length, self.max_seq_size)
         pose_sequence = {
             "data": first_pose.expand(1, sequence_length, *self.pose_dims),

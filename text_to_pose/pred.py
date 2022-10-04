@@ -9,6 +9,7 @@ import itertools
 import math
 import json
 import pickle
+import random
 
 from pose_format import Pose
 from pose_format.numpy import NumPyPoseBody
@@ -289,15 +290,49 @@ def concat_and_add_label(label_frame, pred_frame, image_size):
     return label_pred_im
 
 
-def visualize_poses(_id: str, text: str, poses: List[Pose], add_gaussians: bool = False) -> str:
+def create_ref2poses_video(poses: List[Pose], output_dir, vid_name):
+    os.makedirs(output_dir, exist_ok=True)
+    f_name = os.path.join(output_dir, vid_name)
+    fps = poses[0].body.fps
+    frames = get_normalized_frames(poses)
+    margins = 20
+    max_len = max([len(pose_frames) for pose_frames in frames])
+    shape_0 = max([pose_frames[0].shape[0] for pose_frames in frames]) + margins
+    shape_1 = sum([pose_frames[0].shape[1] for pose_frames in frames]) + margins
+    image_size = (shape_1, shape_0)
+    out = cv2.VideoWriter(f_name,
+                          cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps,
+                          image_size)
+    for i in range(max_len):
+        idx = 0
+        frame = np.full((image_size[1], image_size[0], 3), 255, dtype=np.uint8)
+        for pose_frames in frames:
+            if i < len(pose_frames):
+                frame[margins//2:margins//2+pose_frames[i].shape[0], idx:idx+pose_frames[i].shape[1]] = pose_frames[i]
+            idx += pose_frames[0].shape[1]
+        cv2.line(frame, (frames[0][0].shape[1] + 3, 0), (frames[0][0].shape[1] + 3, len(frame)), 0)
+        out.write(frame)
+    out.release()
+
+
+def create_poses_html(_id: str, text: str, poses: List[Pose], output_dir: str, add_gaussians: bool = False):
+    # TODO- doesn't work..
     lengths = " / ".join([str(len(p.body.data)) for p in poses])
     html_tags = f"<h3><u>{_id}</u>: <span class='hamnosys'>{text}</span> ({lengths})</h3>"
+    for i, pose in enumerate(poses):
+        cur_pose_name = f"{_id}_{i}.mp4"
+        visualize_pose([pose], cur_pose_name, output_dir, add_gaussians=add_gaussians)
+        html_tags += f"<video src='{os.path.join(output_dir, cur_pose_name)}' controls preload='none'></video>"
 
-    pose_name = f"{_id}.mp4"
-    visualize_pose(poses, pose_name, args.pred_output, add_gaussians=add_gaussians)
-    html_tags += f"<video src='{pose_name}' controls preload='none'></video>"
-
-    return html_tags
+    with open("demo.html", "w") as html_file:
+        html_file.write(f'''<html>
+        <head>
+        <title>{_id}</title>
+        </head> 
+        <body>
+        {html_tags} 
+        </body>
+        </html>''')
 
 
 def visualize_seq(seq, pose_header, output_dir, id, label_pose=None, fps=25, add_gaussians=False):
@@ -332,11 +367,12 @@ def vis_label_only(dataset, output_dir, skip_existing=False, add_gaussians=False
 
 
 def pred(model, dataset, output_dir, use_learned_first_pose=False, vis_process=False, add_gaussians=False,
-         vis_pred_only=False, gen_k=30):
+         vis_pred_only=False, gen_k=30, vis=True):
     os.makedirs(output_dir, exist_ok=True)
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
-    pose_header = dataset.data[0]["pose"].header
+    pose_header = dataset[0]["pose"]["obj"].header #dataset.data[0]["pose"].header
     first_pose = None
+    preds = []
 
     model.eval()
     with torch.no_grad():
@@ -345,17 +381,25 @@ def pred(model, dataset, output_dir, use_learned_first_pose=False, vis_process=F
                 break
             if not use_learned_first_pose:
                 first_pose = datum["pose"]["data"][0]
-            seq_len = int(datum["pose"]["length"].item())  # TODO- change to trained model pred
+            seq_len = int(datum["pose"]["length"].item()) #if model.num_steps != 10 else -1
             seq_iter = model.forward(text=datum["text"], first_pose=first_pose, sequence_length=seq_len)
             for j in range(model.num_steps):
                 seq = next(seq_iter)
                 if vis_process and j in [2, 4, 6, 8]:
                     visualize_seq(seq, pose_header, output_dir, f"{datum['id']}_step_{j}", datum["pose"]["obj"],
                                   add_gaussians)
-            if vis_pred_only:
+            if vis and vis_pred_only:
                 visualize_seq(seq, pose_header, output_dir, datum["id"], label_pose=None, add_gaussians=add_gaussians)
-            else:
+            elif vis:
                 visualize_seq(seq, pose_header, output_dir, datum["id"], datum["pose"]["obj"], add_gaussians=add_gaussians)
+            else:
+                data = torch.unsqueeze(seq, 1).cpu()
+                conf = torch.ones_like(data[:, :, :, 0])
+                pose_body = NumPyPoseBody(25, data.numpy(), conf.numpy())
+                predicted_pose = Pose(pose_header, pose_body)
+                preds.append(predicted_pose)
+                pose_hide_legs(predicted_pose)
+    return preds
 
 
 def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path):
@@ -548,11 +592,15 @@ if __name__ == '__main__':
     from shared.collator import zero_pad_collator
     from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
 
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+
     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     DATASET_SIZE = 5750
     test_size = int(0.1 * DATASET_SIZE)
     print("test size", test_size)
-    train_split = "train[:3]"  # f'test[{test_size}:]+train'
+    train_split = f"test[:50]"#{test_size}]"  # f'test[{test_size}:]+train'
     # test_split = "train[:6]"  # f'test[:{test_size}]'
 
     dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
@@ -582,7 +630,38 @@ if __name__ == '__main__':
     args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
 
-    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}/bsl"
+    # test seq_len_predictor
+    # diffs = []
+    # for d in dataset:
+    #     _, seq_len = model.encode_text([d["text"]])
+    #     real_seq_len = len(d["pose"]["data"])
+    #     diff = np.abs(real_seq_len-seq_len.item())
+    #     diffs.append(diff)
+    # print(np.mean(diffs), np.median(diffs), np.max(diffs))
+
+    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}/user_study_demo_pred"
+    ref = None
+    prediction = None
+    for d in dataset:
+        if d["id"] in ["PARDONNER"]:
+            ref = d
+            prediction = pred(model, [d], output_dir, vis=False)[0]
+            break
+
+    poses_1 = [ref["pose"]["obj"]]+[datum["pose"] for datum in dataset[:5]]
+    poses_2 = [prediction]+[datum["pose"] for datum in dataset[:5]]
+    random.shuffle(poses_1)
+    random.shuffle(poses_2)
+    # _id = dataset[0]["id"]
+    # text = dataset[0]["text"]
+    for i in range(len(poses_1)):
+        create_ref2poses_video([prediction]+[poses_1[i]], output_dir, f"test_{ref['id']}_pred_{i}.mp4")
+        create_ref2poses_video([ref["pose"]["obj"]]+[poses_2[i]], output_dir, f"test_{ref['id']}_label_{i}.mp4")
+    # pred(model, dataset, output_dir)
+    exit()
+
+            # --------------------------------------------------------------------------------- #
+
     os.makedirs(output_dir, exist_ok=True)
     pose_header = dataset.data[0]["pose"].header
 
@@ -604,4 +683,3 @@ if __name__ == '__main__':
                 seq = next(seq_iter)
             visualize_seq(seq, pose_header, output_dir, f"{id}", label_pose=None)
             first_pose = seq[-10]
-    # pred(model, dataset, output_dir)

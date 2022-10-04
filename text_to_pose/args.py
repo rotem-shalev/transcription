@@ -12,7 +12,7 @@ parser.add_argument('--no_wandb', type=bool, default=False, help='ignore wandb?'
 # Training Arguments
 parser.add_argument('--seed', type=int, default=42, help='random seed')
 parser.add_argument('--gpus', type=int, default=1, help='how many gpus?')
-parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+parser.add_argument('--batch_size', type=int, default=16, help='batch size')
 parser.add_argument('--masked_loss', type=bool, default=True, help='mask loss by confidence?')
 
 # Data Arguments
