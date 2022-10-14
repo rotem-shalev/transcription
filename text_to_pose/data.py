@@ -43,7 +43,9 @@ class TextPoseDataset(Dataset):
 
 
 def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
-    text = datum["tf_datum"]["hamnosys"].numpy().decode('utf-8').strip() if "hamnosys" in datum["tf_datum"] else ""
+    text = datum["tf_datum"]["hamnosys"].numpy().decode('utf-8').strip() \
+        if "hamnosys" in datum["tf_datum"] else ""
+    text = str(datum["tf_datum"]["gloss_id"].numpy()) if "gloss_id" in datum["tf_datum"] else text
     if "pose" not in datum:
         return TextPoseDatum({
             "id": datum["id"],
@@ -56,8 +58,8 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
 
     # Prune all leading frames containing only zeros, almost no face, or no hands
     for i in range(len(pose.body.data)):
-        if pose.body.confidence[i][:, 25:-42].sum() > 35 and \
-                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > 0:
+        if pose.body.confidence[i][:, 25:-42].sum() >= 35 and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] >= 10:
             if i != 0:
                 pose.body.data = pose.body.data[i:]
                 pose.body.confidence = pose.body.confidence[i:]
@@ -65,8 +67,8 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
 
     # Prune all trailing frames containing only zeros, almost no face, or no hands
     for i in range(len(pose.body.data) - 1, 0, -1):
-        if pose.body.confidence[i][:, 25:-42].sum() > 35 and \
-                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > 0:
+        if pose.body.confidence[i][:, 25:-42].sum() >= 35 and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] >= 10:
             if i != len(pose.body.data) - 1:
                 pose.body.data = pose.body.data[:i + 1]
                 pose.body.confidence = pose.body.confidence[:i + 1]
@@ -76,7 +78,7 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
         "id": datum["id"],
         "text": text,
         "pose": pose,
-        "length": max(len(pose.body.data), len(text))
+        "length": len(pose.body.data)
     })
 
 

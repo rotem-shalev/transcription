@@ -1,6 +1,3 @@
-from text_to_pose.pred import visualize_seq
-from text_to_pose.optimization_helper import NoamLR
-
 from typing import List
 import torch
 from torch import nn
@@ -8,16 +5,16 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import numpy as np
 from torch.optim import optimizer, Adam, SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau, CyclicLR
-import os
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 EPSILON = 1e-4
 START_LEARNING_RATE = 1e-3
 MAX_SEQ_LEN = 200
-output_dir_base = f"/home/nlp/rotemsh/transcription/videos"
+DATA_LENGTH_MEAN = 90
 
 
-def masked_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torch.Tensor, model_num_steps: int):
+def masked_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torch.Tensor, model_num_steps: int = 10):
     # Loss by confidence. If missing joint, no loss. If less likely joint, less gradients.
     sq_error = torch.pow(pose - pose_hat, 2).sum(-1)
     num_steps_norm = np.log(model_num_steps) ** 2 if model_num_steps != 1 else 1  # normalization of the loss by the
@@ -25,7 +22,7 @@ def masked_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torc
     return (sq_error * confidence).mean() * num_steps_norm
 
 
-def high_conf_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torch.Tensor, model_num_steps: int):
+def high_conf_mse_loss(pose: torch.Tensor, pose_hat: torch.Tensor, confidence: torch.Tensor, model_num_steps: int = 10):
     # If missing joint, no loss. otherwise- equal importance.
     sq_error = torch.pow(pose - pose_hat, 2).sum(-1)
     num_steps_norm = np.log(model_num_steps) ** 2  # normalization of the loss by the model's num_steps
@@ -44,6 +41,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             encoder_heads: int = 2,
             encoder_dim_feedforward: int = 2048,
             max_seq_size: int = MAX_SEQ_LEN,
+            min_seq_size: int = 20,
             num_steps: int = 10,
             tf_p: float = 0.5,
             lr: int = START_LEARNING_RATE,
@@ -57,7 +55,9 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             do_pose_self_attention: bool = False,
             concat: bool = True,
             same_encoding_layer: bool = True,
-            no_scheduler: bool = True
+            no_scheduler: bool = True,
+            use_seqlen_pred: bool = False,
+            pred_prob_seq_length: bool = False
     ):
         super().__init__()
         self.lr = lr
@@ -66,6 +66,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         self.patience = patience
         self.tokenizer = tokenizer
         self.max_seq_size = max_seq_size
+        self.min_seq_size = min_seq_size
         self.num_steps = num_steps
         self.hidden_dim = hidden_dim
         self.pose_dims = pose_dims
@@ -77,6 +78,8 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         self.best_loss = np.inf
         self.concat = concat
         self.no_scheduler = no_scheduler
+        self.use_seqlen_pred = use_seqlen_pred
+        self.pred_prob_seq_length = pred_prob_seq_length
 
         pose_dim = int(np.prod(pose_dims))
 
@@ -104,6 +107,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
             self.positional_embeddings = nn.Embedding(
                 num_embeddings=max_seq_size, embedding_dim=hidden_dim
             )
+
             # positional embedding scalars
             self.alpha_pose = nn.Parameter(torch.randn(1))
             self.alpha_text = nn.Parameter(torch.randn(1))
@@ -147,7 +151,11 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         )
 
         # Predict sequence length
-        self.seq_length = nn.Linear(hidden_dim, 1)
+        if self.pred_prob_seq_length:
+            self.seq_length = nn.Sequential(nn.Linear(hidden_dim, self.max_seq_size-self.min_seq_size),  # length from 20 to 200
+                                        torch.nn.Softmax())
+        else:
+            self.seq_length = nn.Linear(hidden_dim, 1)
 
         # Predict pose difference
         pose_diff_projection_output_size = pose_dim
@@ -172,7 +180,13 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         embedding = self.embedding(tokenized["tokens_ids"]) + positional_embedding
         encoded = self.text_encoder(embedding.transpose(0, 1),
                                     src_key_padding_mask=tokenized["attention_mask"]).transpose(0, 1)
-        seq_length = self.seq_length(encoded).mean(axis=1).int()
+
+        if self.pred_prob_seq_length:
+            seq_length = torch.argmax(self.seq_length(encoded).mean(axis=1), dim=1) + self.min_seq_size
+        else:
+            seq_length = self.seq_length(encoded).mean(axis=1).int()
+            seq_length = torch.minimum(seq_length, torch.full_like(seq_length, self.max_seq_size))
+            seq_length = torch.maximum(seq_length, torch.full_like(seq_length, self.min_seq_size))
         return {"data": encoded, "mask": tokenized["attention_mask"]}, seq_length
 
     def forward(self, text: str, first_pose: torch.Tensor = None, sequence_length: int = -1):
@@ -181,7 +195,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
 
         text_encoding, seq_len = self.encode_text([text])
         sequence_length = seq_len if sequence_length == -1 else sequence_length
-        sequence_length = min(sequence_length, self.max_seq_size)
+        # sequence_length = min(sequence_length, self.max_seq_size)
         pose_sequence = {
             "data": first_pose.expand(1, sequence_length, *self.pose_dims),
             "mask": torch.zeros([1, sequence_length], dtype=torch.bool, device=self.device),
@@ -297,7 +311,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
     def validation_step(self, batch, *unused_args):
         return self.step(batch, *unused_args, phase="validation")
 
-    def step(self, batch, *unused_args, phase: str, gamma: float = 0.2):
+    def step(self, batch, *unused_args, phase: str, gamma: float = 2e-5):
         """
         @param batch: data batch
         @param phase: either "train" or "validation"
@@ -308,11 +322,30 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         pose = batch["pose"]
 
         # Repeat the first frame for initial prediction
-        batch_size, pose_seq_length, _, _ = pose["data"].shape
+        batch_size, pose_seq_length, num_keypoints, _ = pose["data"].shape
+        rand = np.random.rand(5)[0]
+        teacher_forcing_seq_length = rand < self.tf_p
+        seq_length = max(sequence_length).item() if self.use_seqlen_pred and teacher_forcing_seq_length else \
+            pose_seq_length
+        pose_inverse_mask = pose["inverse_mask"][:, :seq_length] if pose_seq_length > seq_length else \
+            torch.cat([pose["inverse_mask"], torch.zeros((batch_size, seq_length-pose_seq_length),
+                                                         dtype=torch.bool,
+                                                         device=self.device)], dim=1)
+
         pose_sequence = {
-            "data": torch.stack([pose["data"][:, 0]] * pose_seq_length, dim=1),
-            "mask": torch.logical_not(pose["inverse_mask"])
+            "data": torch.stack([pose["data"][:, 0]] * seq_length, dim=1),
+            "mask": torch.logical_not(pose_inverse_mask)
         }
+
+        if self.use_seqlen_pred and teacher_forcing_seq_length:
+            if seq_length > pose_seq_length:
+                pose["data"] = torch.cat([pose["data"], torch.stack([pose["data"][:, 0]] *
+                                                                    (seq_length - pose_seq_length), dim=1)], dim=1)
+                pose["confidence"] = torch.cat([pose["confidence"], torch.zeros((batch_size, seq_length -
+                                                pose_seq_length, num_keypoints), device=self.device)], dim=1)
+            else:
+                pose["data"] = pose["data"][:, :seq_length]
+                pose["confidence"] = pose["confidence"][:, :seq_length]
 
         if self.num_steps == 1:
             pred = self.refine_pose_sequence(pose_sequence, text_encoding)
@@ -329,16 +362,20 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
                 else:
                     refinement_loss += high_conf_mse_loss(l1_gold, pred, pose["confidence"], self.num_steps)
 
-                teacher_forcing_step_level = torch.rand(1) < self.tf_p
+                teacher_forcing_step_level = np.random.rand(1)[0] < self.tf_p
                 # l1_gold = torch.where(pose["data"] == 0, pred, l1_gold)
                 pose_sequence["data"] = l1_gold if phase == "validation" or teacher_forcing_step_level else pred
-
+                if self.use_seqlen_pred and teacher_forcing_seq_length:
+                    pose_sequence["data"] = pred
                 if phase == "train":  # add just a little noise while training
                     pose_sequence["data"] = pose_sequence["data"] + torch.randn_like(pose_sequence["data"]) * EPSILON
 
         loss = refinement_loss
 
-        sequence_length_loss = F.mse_loss(sequence_length, pose["length"]) / 10000
+        all_seq_lens = torch.Tensor([torch.where(pose["inverse_mask"][i] == False)[0][0].item()
+                                     if len(torch.where(pose["inverse_mask"][i] == False)[0]) > 0
+                                     else pose["inverse_mask"].size(1) for i in range(batch_size)]).unsqueeze(1).to(self.device)
+        sequence_length_loss = F.mse_loss(sequence_length.unsqueeze(1), all_seq_lens)
         loss += gamma*sequence_length_loss
 
         self.log(phase + "_seq_length_loss", sequence_length_loss, batch_size=batch_size)

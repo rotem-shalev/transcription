@@ -586,6 +586,42 @@ def create_gaussian_pose_data(dataset, data_path, output_path):
 
 
 if __name__ == '__main__':
+    # with open("/home/nlp/rotemsh/transcription/processed_data.pkl", 'rb') as f:
+    #     processed_data = pickle.load(f)
+    # import importlib
+    # from pose_format.pose_header import PoseHeader
+    # from pose_format.utils.reader import BufferReader
+    # from shared.tfds_dataset import process_datum as process_datum_tfds
+    # from text_to_pose.metrics import compare_poses
+    # from text_to_pose.data import process_datum as process_datum_data
+    # import tensorflow_datasets as tfds
+    # from sign_language_datasets.datasets.config import SignDatasetConfig
+    #
+    # config = SignDatasetConfig(name="only-annotations", version="1.0.0", include_video=False,
+    #                            include_pose="openpose")
+    # autsl_dataset = tfds.load(name='autsl', builder_kwargs={"config": config})
+    #
+    # dataset_module = importlib.import_module(f"sign_language_datasets.datasets.autsl.autsl")
+    # # pylint: disable=protected-access
+    # with open(dataset_module._POSE_HEADERS["openpose"], "rb") as buffer:
+    #     pose_header = PoseHeader.read(BufferReader(buffer.read()))
+    #
+    # processed_data = [process_datum_tfds(datum, pose_header) for datum in autsl_dataset["train"]]
+    # print("after first process")
+    # processed_data = [process_datum_data(d) for d in processed_data]
+    # print("after second process")
+    # output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/AUTSL"
+    #
+    # for i in range(3):
+    # text = processed_data[i]["text"]
+    # ref_signs = ["signer7_sample2204_9", "signer7_sample2586_134", "signer7_sample2671_100",
+    #              "signer7_sample1061_221", "signer7_sample1619_158", "signer7_sample1742_171",
+    #              "signer7_sample840_87", "signer4_sample204_136", "signer7_sample1152_132"]
+    # signs = [datum for datum in processed_data if f"{datum['id']}_{datum['text']}" in ref_signs]
+    # for sign in signs:
+    #     visualize_pose([sign["pose"]], f"{sign['text']}_{sign['id']}.mp4", output_dir)
+    # exit()
+
     from torch.optim import Adam
     from torch.utils.data import DataLoader
     from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
@@ -596,17 +632,37 @@ if __name__ == '__main__':
     np.random.seed(42)
     torch.manual_seed(42)
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     DATASET_SIZE = 5750
     test_size = int(0.1 * DATASET_SIZE)
     print("test size", test_size)
-    train_split = f"test[:50]"#{test_size}]"  # f'test[{test_size}:]+train'
+    train_split = f"test[{test_size}:]"#{test_size}]"  # f'test[{test_size}:]+train'
     # test_split = "train[:6]"  # f'test[:{test_size}]'
 
-    dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
+    train_dataset, test_dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps, leave_out="lsf",
                           components=args.pose_components, exclude=True, use_relative_pose=False,
                           max_seq_size=args.max_seq_size, split=train_split)
 
+    # from fontTools.ttLib import TTFont
+    # from pathlib import Path
+    from collections import defaultdict
+
+    # with TTFont(Path(__file__).parent.joinpath("HamNoSysUnicode.ttf")) as font:
+    #     for key, val in font["cmap"].getBestCmap().items():
+    #         print(key, val, chr(key))
+    #
+    glyph2count = []
+    for dataset in [test_dataset, train_dataset]:
+        glyph2count.append(defaultdict(int))
+        for datum in dataset:
+            for c in datum["text"]:
+                glyph2count[-1][c] += 1
+    for d in glyph2count:
+        print(sorted(d.items(), key=lambda x: x[1]))
+
+    print("keys in lsf not in rest: ", set(glyph2count[0].keys())-set(glyph2count[1].keys()))
+
+"""    
     experiment_name = "reproduce_exclude_sep_2"#"exclude_bad_videos_sep_pos_embedding"
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
 
@@ -639,47 +695,70 @@ if __name__ == '__main__':
     #     diffs.append(diff)
     # print(np.mean(diffs), np.median(diffs), np.max(diffs))
 
-    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}/user_study_demo_pred"
-    ref = None
-    prediction = None
-    for d in dataset:
-        if d["id"] in ["PARDONNER"]:
-            ref = d
-            prediction = pred(model, [d], output_dir, vis=False)[0]
-            break
-
-    poses_1 = [ref["pose"]["obj"]]+[datum["pose"] for datum in dataset[:5]]
-    poses_2 = [prediction]+[datum["pose"] for datum in dataset[:5]]
-    random.shuffle(poses_1)
-    random.shuffle(poses_2)
+    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/{experiment_name}"
+    # ref = None
+    # prediction = None
+    # for d in dataset:
+    #     if d["id"] in ["PARDONNER"]:
+    #         ref = d
+    #         prediction = pred(model, [d], output_dir, vis=False)[0]
+    #         break
+    #
+    # poses_1 = [ref["pose"]["obj"]]+[datum["pose"] for datum in dataset[:5]]
+    # poses_2 = [prediction]+[datum["pose"] for datum in dataset[:5]]
+    # random.shuffle(poses_1)
+    # random.shuffle(poses_2)
     # _id = dataset[0]["id"]
     # text = dataset[0]["text"]
-    for i in range(len(poses_1)):
-        create_ref2poses_video([prediction]+[poses_1[i]], output_dir, f"test_{ref['id']}_pred_{i}.mp4")
-        create_ref2poses_video([ref["pose"]["obj"]]+[poses_2[i]], output_dir, f"test_{ref['id']}_label_{i}.mp4")
+    # for i in range(len(poses_1)):
+    #     create_ref2poses_video([prediction]+[poses_1[i]], output_dir, f"test_{ref['id']}_pred_{i}.mp4")
+    #     create_ref2poses_video([ref["pose"]["obj"]]+[poses_2[i]], output_dir, f"test_{ref['id']}_label_{i}.mp4")
     # pred(model, dataset, output_dir)
-    exit()
 
             # --------------------------------------------------------------------------------- #
 
     os.makedirs(output_dir, exist_ok=True)
     pose_header = dataset.data[0]["pose"].header
 
-    bsl_id2hamnosys = {"cat": "", "nose": "", "accomodate": "",
-                       "look": "", "one": "", "actor": "",
-                       "address": "", "bed": "", "beverage": "",
-                       "blue": "", "boat": "", "house": "",
-                       "kitchen": "",
-                       "love": ""}
-    id2hamnosys = {"how": "\ue0e9\ue000\ue00c\ue029\ue03d\ue0d0\ue0e2\ue082\ue0aa\ue03f\ue0e3",
-                   "you": "\ue002\ue0e6\ue002\ue010\ue031\ue03d\ue089\ue0c6",
-                   "good": "\ue000\ue00c\ue031\ue028\ue03e\ue051\ue089\ue0c6\ue0cc"}
+    # bsl_id2hamnosys = {"cat": "", "nose": "", "accomodate": "",
+    #                    "look": "", "one": "", "actor": "",
+    #                    "address": "", "bed": "", "beverage": "",
+    #                    "blue": "", "boat": "", "house": "",
+    #                    "kitchen": "",
+    #                    "love": ""}
+    # id2hamnosys = {"how": "\ue0e9\ue000\ue00c\ue029\ue03d\ue0d0\ue0e2\ue082\ue0aa\ue03f\ue0e3",
+    #                "you": "\ue002\ue0e6\ue002\ue010\ue031\ue03d\ue089\ue0c6",
+    #                "good": "\ue000\ue00c\ue031\ue028\ue03e\ue051\ue089\ue0c6\ue0cc"}
+    # id2hamnosys = {"tomorrow": "",
+    #                "cold": "",
+    #                 "rain": "",
+    #                "outside": ""
+    # }
+
+    id2hamnosys = {
+        "MEAT": "\ue0e2\ue00b\ue00d\ue031\ue028\ue03d\ue0e7\ue001\ue02a\ue03b\ue0e3\ue064\ue068\ue0d1\ue0a7"
+        # "OWN": "\ue002\ue00c\ue027\ue03c\ue059\ue051\ue0d0\ue08c\ue0d1\ue0d8"
+        #"\ue004\ue00c\ue031\ue03e\ue051\ue059\ue0d0\ue08c\ue0d1\ue0d8",
+        # "TO-CHANGE": "\ue0e9\ue0c7\ue010\ue000\ue071\ue012\ue0e2\ue031\ue028\ue03d\ue0e7\ue031\ue02a\ue039\ue0e3\ue067\ue0d1\ue0aa\ue0e2\ue03f\ue0e7\ue03b\ue0e3"
+    }
+
+
     model.eval()
-    first_pose = dataset[2]["pose"]["data"][0]
+    for datum in dataset:
+        if datum["id"] == "24042":
+            first_pose = datum["pose"]["data"][0]
+            break
+    # first_pose = dataset[3]["pose"]["data"][0]
+    full_seq = []
     with torch.no_grad():
         for id, text in id2hamnosys.items():
             seq_iter = model.forward(text=text, first_pose=first_pose)
             for j in range(model.num_steps):
                 seq = next(seq_iter)
-            visualize_seq(seq, pose_header, output_dir, f"{id}", label_pose=None)
-            first_pose = seq[-10]
+            print(len(seq))
+            visualize_seq(seq, pose_header, output_dir, id, label_pose=None)
+
+            # full_seq.append(seq[:-7])
+            # first_pose = seq[-7]
+    # visualize_seq(torch.cat(full_seq), pose_header, output_dir, "full_7", label_pose=None)
+"""

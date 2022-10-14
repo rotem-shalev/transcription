@@ -16,7 +16,7 @@ def pose_hide_low_conf(pose: Pose):
 
 
 def pose_hide_legs(pose: Pose):
-    if pose.header.components[0].name == "pose_keypoints_2d":
+    if pose.header.components[0].name in ["pose_keypoints_2d", 'BODY_135']:
         point_names = ["Knee", "Ankle", "Heel", "BigToe", "SmallToe", "Hip"]
         points = [pose.header._get_point_index(pose.header.components[0].name, side+n)
                 for n in point_names for side in ["L", "R"]]

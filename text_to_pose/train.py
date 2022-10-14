@@ -20,9 +20,9 @@ from text_to_pose.constants import num_steps_to_batch_size, batch_size_to_accumu
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"#"0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
     args.gpus = 1
-    experiment_name = "exclude_sep_leave_out_lsf"
+    experiment_name = "reproduce_exclude_sep_seq_len_6"
     print("experiment_name:", experiment_name)
 
     if experiment_name != "test":
@@ -94,7 +94,6 @@ if __name__ == '__main__':
         os.makedirs("models", exist_ok=True)
         callbacks.append(ModelCheckpoint(
             dirpath="/home/nlp/rotemsh/transcription/models/" + experiment_name,
-            # filepath="/home/nlp/rotemsh/transcription/models/" + experiment_name+"/model",
             filename="model",
             verbose=True,
             save_top_k=1,
@@ -103,7 +102,7 @@ if __name__ == '__main__':
         ))
 
     trainer = pl.Trainer(
-        max_epochs=1000,
+        max_epochs=2000,
         logger=LOGGER,
         callbacks=callbacks,
         accelerator='gpu',
@@ -125,6 +124,9 @@ if __name__ == '__main__':
         _, seq_len = model.encode_text([d["text"]])
         real_seq_len = len(d["pose"]["data"])
         diff = np.abs(real_seq_len-seq_len.item())
+        if diff > 100:
+            print(d["id"])
+            print("real vs pred:", real_seq_len, seq_len.item())
         diffs.append(diff)
     print(np.mean(diffs), np.median(diffs), np.max(diffs))
 

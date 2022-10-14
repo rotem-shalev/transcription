@@ -106,12 +106,12 @@ def flip_pose(pose):
     return pose
 
 
-def process_datum(datum, pose_header: PoseHeader, no_flip, components: List[str] = None,
+def process_datum(datum, pose_header: PoseHeader, no_flip: bool = False, components: List[str] = None,
                   use_relative_pose: bool = False) -> ProcessedPoseDatum:
     tf_poses = {"": datum["pose"]} if "pose" in datum else datum["poses"]
     poses = {}
     for key, tf_pose in tf_poses.items():
-        fps = int(datum["fps"].numpy())
+        fps = int(datum["fps"].numpy()) if hasattr(datum, "fps") else int(datum["pose"]["fps"].numpy())
         pose_body = NumPyPoseBody(fps, tf_pose["data"].numpy(), tf_pose["conf"].numpy())
         pose = Pose(pose_header, pose_body)
 
@@ -132,7 +132,7 @@ def process_datum(datum, pose_header: PoseHeader, no_flip, components: List[str]
             pose.body.data = get_relative_pose(pose.body.data)
 
         poses[key] = pose
-    if "pose" in datum:
+    if "pose" in datum and hasattr(datum, "fps"):
         datum["pose"]["fps"] = datum["fps"]
     return {
         "id": datum["id"].numpy().decode('utf-8'),

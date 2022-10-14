@@ -49,6 +49,7 @@ args = parser.parse_args()
 # ---------------------
 if args.seed == 0:  # Make seed random if 0
     args.seed = random.randint(0, 1000)
+args.seed = 42
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 random.seed(args.seed)

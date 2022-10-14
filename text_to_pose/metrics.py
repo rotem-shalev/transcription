@@ -243,11 +243,22 @@ def DTWdistance(trajectory1, trajectory2):
 
 def masked_euclidean(point1, point2):
     if np.ma.is_masked(point1) or np.ma.is_masked(point2):
-        return 0#np.infty
+        return 0
+    # if np.ma.is_masked(point2):
+    #     return 100
     d = euclidean(point1, point2)
-    # if np.isnan(d):
-    #     return np.infty
     return d
+
+
+def masked_mse(trajectory1, trajectory2, confidence):
+    if len(trajectory1) < len(trajectory2):
+        diff = len(trajectory2) - len(trajectory1)
+        trajectory1 = np.concatenate((trajectory1, np.zeros((diff, 2))))
+        confidence = np.concatenate((confidence, np.zeros((diff))))
+    elif len(trajectory2) < len(trajectory1):
+        trajectory2 = np.concatenate((trajectory2, np.zeros((len(trajectory1) - len(trajectory2), 2))))
+    sq_error = np.power(trajectory1 - trajectory2, 2).sum(-1)
+    return (sq_error * confidence).mean()
 
 
 def compare_pose_videos(pose1_id, pose2_id, keypoints_path, distance_function=fastdtw):
@@ -257,6 +268,7 @@ def compare_pose_videos(pose1_id, pose2_id, keypoints_path, distance_function=fa
 
 
 def compare_poses(pose1, pose2, distance_function=fastdtw):
+    # don't use legs, face for trajectory distance computations- only upper body and hands
     pose1_data_normalized = np.ma.concatenate([pose1.body.data[:, :, :95] - pose1.body.data[0, 0, 0],
                                             pose1.body.data[:, :, 95:116] - pose1.body.data[0, 0, 95],
                                             pose1.body.data[:, :, 116:] - pose1.body.data[0, 0, 116]], axis=2)
@@ -266,17 +278,19 @@ def compare_poses(pose1, pose2, distance_function=fastdtw):
 
     total_distance = 0
     idx2weight = {i: 0.2 for i in range(9)}
-    idx2weight.update({i: 1 for i in range(95, pose1.body.data.shape[2])})
+    idx2weight.update({i: 0.8 for i in range(95, pose1.body.data.shape[2])})
     for keypoint_idx, weight in idx2weight.items():
-        # don't use legs, face for trajectory distance computations- only upper body and hands
-        pose1_keypoint_trajectory = pose1_data_normalized[:, :, keypoint_idx].squeeze(1)#get_keypoint_trajectory(pose1,
-    # keypoint_idx, pose1_id)
-        pose2_keypoint_trajectory = pose2_data_normalized[:, :, keypoint_idx].squeeze(1)#get_keypoint_trajectory(pose2,
-    # keypoint_idx, pose2_id)
-        dist = distance_function(pose1_keypoint_trajectory, pose2_keypoint_trajectory, dist=masked_euclidean)[0]
+        pose1_keypoint_trajectory = pose1_data_normalized[:, :, keypoint_idx].squeeze(1)
+        pose2_keypoint_trajectory = pose2_data_normalized[:, :, keypoint_idx].squeeze(1)
+        if np.ma.is_masked(pose1_keypoint_trajectory) or np.ma.is_masked(pose2_keypoint_trajectory):
+            continue
+        if distance_function == masked_mse:
+            dist = distance_function(pose1_keypoint_trajectory, pose2_keypoint_trajectory, pose1.body.confidence[:,
+                                                                                           :, keypoint_idx].squeeze(1))
+        else:
+            dist = distance_function(pose1_keypoint_trajectory, pose2_keypoint_trajectory, dist=masked_euclidean)[0]
         total_distance += dist*weight
     return total_distance/len(idx2weight)
-
 
 
 def visualize_candidates(poses):  # TODO- doesn't work at the moment
