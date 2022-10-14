@@ -27,21 +27,20 @@ def combine_results(experiment_name, results_path):
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     args.gpus = 1
-    experiment_name = "exclude_sep_leave_out_pjm" #"reproduce_exclude_sep_2"
+    experiment_name = "reproduce_exclude_sep_2" #"exclude_sep_leave_out_pjm"
     #"exclude_bad_videos_sep_pos_embedding"
     args.num_steps = 10
     args.batch_size = num_steps_to_batch_size[args.num_steps]
     print("experiment_name:", experiment_name)
 
     test_size = int(0.1*DATASET_SIZE)
-    dataset, dataset_pjm = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
+    dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
                                        components=args.pose_components, exclude=True,
                                        max_seq_size=args.max_seq_size,
-                                       split=f'test[{test_size}:]',
-                                       leave_out="pjm")
-    # data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=zero_pad_collator)
+                                       split=f'test[:{test_size}]')
+                                       # leave_out="pjm")
 
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
     pose_header = dataset.data[0]["pose"].header
@@ -84,7 +83,7 @@ if __name__ == "__main__":
 
         model = model.cuda()
         with torch.no_grad():
-            ds = dataset_pjm
+            ds = dataset
             # for ds_name, ds in {"lsf": dataset_lsf, "rest": dataset}.items():
             rank_1_pred_sum = rank_5_pred_sum = rank_10_pred_sum = rank_1_label_sum = rank_5_label_sum =  \
                 rank_10_label_sum = 0
@@ -120,7 +119,7 @@ if __name__ == "__main__":
             print(f"rank 5 label sum: {rank_5_label_sum} / {num_samples}: {rank_5_label_sum / num_samples}")
             print(f"rank 10 label sum: {rank_10_label_sum} / {num_samples}: {rank_10_label_sum / num_samples}")
 
-            with open(f"results/pred2label_distances_gt_seq_len_no_pjm_all.json",#{ds_name}.json",
+            with open(f"results/pred2label_distances_gt_seq_len_all.json",#{ds_name}.json",
                       'w') as f:
                 json.dump(pred2label_distances, f)
 

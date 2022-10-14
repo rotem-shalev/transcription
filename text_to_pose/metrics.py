@@ -430,19 +430,9 @@ def __compare_pred_to_video(pred, keypoints_path, pose_id, distance_function):
 
 
 def check_ranks(distances, index):
-    rank_1 = rank_5 = rank_10 = False
-    if index == distances[0]:
-        rank_1 = True
-        rank_5 = True
-        rank_10 = True
-        # print("\nindex in best 1")
-    elif index in distances[:5]:
-        rank_5 = True
-        rank_10 = True
-        # print("\nindex in best 5")
-    elif index in distances:
-        rank_10 = True
-        # print("\nindex in best 10")
+    rank_1 = (index == distances[0])
+    rank_5 = (index in distances[:5])
+    rank_10 = (index in distances)
     return rank_1, rank_5, rank_10
 
 
