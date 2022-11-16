@@ -111,8 +111,9 @@ _POSE_HEADERS = {
     "openpose": path.join(path.dirname(path.realpath(__file__)), "openpose.poseheader"),
 }
 _DATA_PATH = path.join(path.dirname(path.realpath(__file__)), "data.json")
-# _KEYPOINTS_PATH = path.join(path.dirname(path.realpath(__file__)), "keypoints")
-_KEYPOINTS_PATH = "/home/nlp/rotemsh/SLP/data/keypoints_dir"
+_KEYPOINTS_PATH = path.join(path.dirname(path.realpath(__file__)), "keypoints")
+# _KEYPOINTS_PATH = "/home/nlp/rotemsh/SLP/data/keypoints_dir"
+MIN_CONFIDENCE = 0.2
 
 
 def get_pose(keypoints_path: str, fps: int) -> Dict[str, Pose]:
@@ -136,11 +137,11 @@ def get_pose(keypoints_path: str, fps: int) -> Dict[str, Pose]:
                 cur_frame_pose = frame_json["people"][0]
                 if (np.array(cur_frame_pose['pose_keypoints_2d'][7*3:7*3 + 2]) -
                     np.array(cur_frame_pose['hand_left_keypoints_2d'][0:2])).max() > 15 and \
-                        cur_frame_pose['pose_keypoints_2d'][7*3 + 2] > 0.2:
+                        cur_frame_pose['pose_keypoints_2d'][7*3 + 2] > MIN_CONFIDENCE:
                     cur_frame_pose['hand_left_keypoints_2d'][0:2] = cur_frame_pose['pose_keypoints_2d'][7*3:7*3 + 2]
                 if (np.array(cur_frame_pose['pose_keypoints_2d'][4*3:4*3 + 2]) -
                     np.array(cur_frame_pose['hand_right_keypoints_2d'][0:2])).max() > 15 and \
-                        cur_frame_pose['pose_keypoints_2d'][4*3 + 2] > 0.2:
+                        cur_frame_pose['pose_keypoints_2d'][4*3 + 2] > MIN_CONFIDENCE:
                     cur_frame_pose['hand_right_keypoints_2d'][0:2] = cur_frame_pose['pose_keypoints_2d'][4*3:4*3 + 2]
 
         except:

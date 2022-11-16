@@ -14,7 +14,7 @@ from shared.pose_utils import pose_normalization_info, pose_hide_legs, pose_hide
 import json
 
 PJM_FRAME_WIDTH = 1280
-with open("/home/nlp/rotemsh/transcription/shared/pjm_left_videos.json", 'r') as f:
+with open("shared/pjm_left_videos.json", 'r') as f:
     PJM_LEFT_VIDEOS_LST = json.load(f)
 
 
@@ -26,7 +26,7 @@ class ProcessedPoseDatum(Dict):
 
 def get_tfds_dataset(name, poses="holistic", fps=25, split="train", include_low_conf_vids=True, exclude=False,
                      components: List[str] = None, data_dir=None, version="1.0.0", no_flip=False, use_relative_pose=False):
-    if name in ["hamnosys", "perfect_pose_frames"]:
+    if name == "hamnosys":
         dataset_module = importlib.import_module(f"datasets.{name}.{name}")
     else:
         dataset_module = importlib.import_module(f"sign_language_datasets.datasets.{name}.{name}")
@@ -107,7 +107,7 @@ def flip_pose(pose):
 
 
 def process_datum(datum, pose_header: PoseHeader, no_flip: bool = False, components: List[str] = None,
-                  use_relative_pose: bool = False) -> ProcessedPoseDatum:
+                  use_relative_pose: bool = False, normalize: bool = True) -> ProcessedPoseDatum:
     tf_poses = {"": datum["pose"]} if "pose" in datum else datum["poses"]
     poses = {}
     for key, tf_pose in tf_poses.items():
@@ -121,9 +121,10 @@ def process_datum(datum, pose_header: PoseHeader, no_flip: bool = False, compone
         # Get subset of components if needed
         if components and len(components) != len(pose_header.components):
             pose = pose.get_components(components)
+        if normalize:
+            normalization_info = pose_normalization_info(pose_header)
+            pose = pose.normalize(normalization_info)
 
-        normalization_info = pose_normalization_info(pose_header)
-        pose = pose.normalize(normalization_info)
         if not components or "pose_keypoints_2d" in components:
             pose_hide_legs(pose)
         pose_hide_low_conf(pose)

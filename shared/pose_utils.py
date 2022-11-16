@@ -32,7 +32,7 @@ def pose_hide_legs(pose: Pose):
     pose.body.data[:, :, points, :] = 0
 
 
-def pose_normalization_info(pose_header: PoseHeader): # TODO- add hands normalization
+def pose_normalization_info(pose_header: PoseHeader):
     if pose_header.components[0].name == "POSE_LANDMARKS":
         return pose_header.normalization_info(
             p1=("POSE_LANDMARKS", "RIGHT_SHOULDER"),

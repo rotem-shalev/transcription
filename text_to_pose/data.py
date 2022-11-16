@@ -1,9 +1,9 @@
 from typing import List, Dict
-
 import torch
 from pose_format import Pose
 from torch.utils.data import Dataset
 from shared.tfds_dataset import ProcessedPoseDatum, get_tfds_dataset
+from text_to_pose.constants import MIN_CONFIDENCE, NUM_FACE_KEYPOINTS
 
 
 class TextPoseDatum(Dict):
@@ -56,19 +56,22 @@ def process_datum(datum: ProcessedPoseDatum) -> TextPoseDatum:
 
     pose: Pose = datum["pose"]
 
-    # Prune all leading frames containing only zeros, almost no face, or no hands
+    face_th = 0.5*NUM_FACE_KEYPOINTS
+    hands_th = MIN_CONFIDENCE
+
+    # Prune all leading frames containing only zeros, almost no face or no hands
     for i in range(len(pose.body.data)):
-        if pose.body.confidence[i][:, 25:-42].sum() >= 35 and \
-                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] >= 10:
+        if pose.body.confidence[i][:, 25:-42].sum() > face_th and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > hands_th:
             if i != 0:
                 pose.body.data = pose.body.data[i:]
                 pose.body.confidence = pose.body.confidence[i:]
             break
 
-    # Prune all trailing frames containing only zeros, almost no face, or no hands
+    # Prune all trailing frames containing only zeros, almost no face or no hands
     for i in range(len(pose.body.data) - 1, 0, -1):
-        if pose.body.confidence[i][:, 25:-42].sum() >= 35 and \
-                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] >= 10:
+        if pose.body.confidence[i][:, 25:-42].sum() > face_th and \
+                pose.body.confidence[i][:, 4] + pose.body.confidence[i][:, 7] > hands_th:
             if i != len(pose.body.data) - 1:
                 pose.body.data = pose.body.data[:i + 1]
                 pose.body.confidence = pose.body.confidence[:i + 1]
@@ -104,38 +107,3 @@ def get_dataset(name="dicta_sign", poses="holistic", fps=25, split="train", incl
             test_data = [d for d in data if leave_out in d["id"]]
         return TextPoseDataset(train_data), TextPoseDataset(test_data)
     return TextPoseDataset(data)
-
-#################################
-# Augmentations
-#################################
-
-#
-# class RepeatSign:
-#
-#     def __init__(self, p=0.5):
-#         self.p = p
-#
-#     def __call__(self, sample):
-#         REPEAT_FROM_START_CHAR = "\ue0d8"
-#         if REPEAT_FROM_START_CHAR in sample["text"] or torch.rand(1) < self.p:
-#             return sample
-#         new_text = sample["text"] + REPEAT_FROM_START_CHAR
-#         new_pose = sample["pose"]  # TODO
-#         new_sample = {
-#             "id": sample["id"],
-#             "text": new_text,
-#             "pose": new_pose
-#         }
-#         return new_sample
-#
-#
-# if __name__ == "__main__":
-#     import torchvision
-#     transform = torchvision.transforms.Compose([
-#         RepeatSign(p=1),
-#         torchvision.transforms.ToTensor(),
-#     ])
-#     test_dataset = get_dataset(name="hamnosys", poses="openpose", fps=25,
-#                                     components=None,
-#                                     max_seq_size=100, split="train[10:20]")
-#     transform(test_dataset[0])
