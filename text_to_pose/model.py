@@ -138,7 +138,7 @@ class IterativeTextGuidedPoseGenerationModel(pl.LightningModule):
         seq_length = self.seq_length(encoded).mean(axis=1)
         return {"data": encoded, "mask": tokenized["attention_mask"]}, seq_length
 
-    def forward(self, text: str, first_pose: torch.Tensor = None, sequence_length: int = -1):
+    def forward(self, text: str, first_pose: torch.Tensor, sequence_length: int = -1):
         text_encoding, seq_len = self.encode_text([text])
         seq_len = round(float(seq_len))
         seq_len = max(min(seq_len, self.max_seq_size), self.min_seq_size)

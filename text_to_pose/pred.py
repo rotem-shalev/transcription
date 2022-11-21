@@ -221,7 +221,7 @@ def pred(model, dataset, output_dir, vis_process=False, vis_pred_only=False, gen
         for i, datum in enumerate(dataset):
             if subset is not None and datum["id"] not in subset:
                 continue
-            if i > gen_k and subset is None:
+            if i >= gen_k and subset is None:
                 break
             first_pose = datum["pose"]["data"][0]
             seq_len = -1
@@ -251,21 +251,24 @@ def pred(model, dataset, output_dir, vis_process=False, vis_pred_only=False, gen
     return preds
 
 
-def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", add_title=True):
+def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", add_title=True, slow=False):
     if output_dir == "":
         output_dir = os.path.join(model_vids_path, "combined")
     os.makedirs(output_dir, exist_ok=True)
     for vid in os.listdir(model_vids_path):
         if not vid.endswith(".mp4"):
             continue
-        if vid in output_dir:
+        if vid in os.listdir(output_dir):
             continue
         cap_orig = cv2.VideoCapture(os.path.join(orig_vids_path, vid))
         cap_keypoints = cv2.VideoCapture(os.path.join(model_vids_path, vid))
         ret, frame_orig = cap_orig.read()
         if "pjm" in vid:
-            if vid == "pjm_2792.mp4":
+            if vid in ["pjm_2792.mp4", "pjm_1675.mp4"]:
                 for i in range(32):
+                    _, frame_orig = cap_orig.read()
+            elif vid in ["pjm_3179.mp4"]:
+                for i in range(40):
                     _, frame_orig = cap_orig.read()
             else:
                 for i in range(48):
@@ -276,6 +279,10 @@ def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", ad
                 if vid in ["pjm_3144.mp4", "pjm_572.mp4"]:
                     for i in range(10):
                         _, frame_orig = cap_orig.read()
+                if vid in ["pjm_2428.mp4"]:
+                    for i in range(20):
+                        _, frame_orig = cap_orig.read()
+
         _, frame_keypoints = cap_keypoints.read()
         if frame_orig is None or frame_keypoints is None:
             print(vid)
@@ -294,7 +301,10 @@ def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", ad
         elif "gsl" in vid or vid in ["VILLA_.mp4", "_NUM-QUINZE.mp4"]:
             scaled_orig_width -= 100
         height = max(orig_height, frame_keypoints.shape[0])
-        out_vid = cv2.VideoWriter(os.path.join(model_vids_path, "combined", vid),
+        out_vid_name = os.path.join(model_vids_path, "combined", vid)
+        if slow:
+            out_vid_name = os.path.join(model_vids_path, "combined", "slow_"+vid)
+        out_vid = cv2.VideoWriter(out_vid_name,
                                   cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), 25,
                                   (scaled_orig_width + frame_keypoints.shape[1], height))
         i = 1
@@ -333,7 +343,8 @@ def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", ad
                 frame_orig = frame_orig[:, 150:-150]
             elif ret and ("gsl" in vid or vid in ["VILLA_.mp4", "_NUM-QUINZE.mp4"]):
                 frame_orig = frame_orig[:, 50:-50]
-            if ret and vid in ["pjm_1471.mp4", "pjm_572.mp4", "pjm_1561.mp4", "pjm_1634.mp4", "pjm_1944"]:
+            if ret and vid in ["pjm_1471.mp4", "pjm_572.mp4", "pjm_1561.mp4", "pjm_1634.mp4", "pjm_1944.mp4",
+                               "pjm_1955.mp4", "pjm_1675.mp4", "pjm_2428.mp4"]:
                 frame_orig = np.fliplr(frame_orig)
             if height == orig_height:
                 empty = np.full((height, frame_keypoints.shape[1], 3), 255, dtype=np.uint8)
@@ -344,6 +355,8 @@ def add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, output_dir="", ad
                 empty[(height-orig_height)//2:-(height-orig_height)//2, :] = frame_orig
                 cat = np.concatenate((empty, frame_keypoints), axis=1)
             out_vid.write(cat)
+            if slow:
+                out_vid.write(cat)
             prev_frame_orig = frame_orig
             prev_frame_keypoints = frame_keypoints
             ret, frame_orig = cap_orig.read()
@@ -431,7 +444,7 @@ def generate_different_step_num_vids(ten_steps_model, model_args, dataset, subse
 if __name__ == '__main__':
     # orig_vids_path = r"/home/nlp/rotemsh/transcription/text_to_pose/results/videos"
     # model_vids_path = r"/home/nlp/rotemsh/transcription/text_to_pose/results/pose_videos"
-    # add_orig_vid_to_model_vid(orig_vids_path, model_vids_path)
+    # add_orig_vid_to_model_vid(orig_vids_path, model_vids_path, slow=False)
     # exit()
 
     random.seed(42)
@@ -442,7 +455,7 @@ if __name__ == '__main__':
     DATASET_SIZE = 5754
     test_size = int(0.1 * DATASET_SIZE)
     print("test size", test_size)
-    test_split = f'test[:{test_size}]'
+    test_split = f'test[8:9]'#{test_size}]'
     # 14 - 10334
     # 18 - pjm_1220
     # 91 - 2358
@@ -452,8 +465,8 @@ if __name__ == '__main__':
     dataset = get_dataset(name=args.dataset, poses=args.pose, fps=args.fps,
                           components=args.pose_components, exclude=True,
                           max_seq_size=args.max_seq_size, split=test_split)
-
-    experiment_name = "reproduce_exclude_sep_2"
+    args.num_steps = 10
+    experiment_name = "reproduce_exclude_sep_2" #f"exclude_sep_{args.num_steps}_steps"
     _, num_pose_joints, num_pose_dims = dataset[0]["pose"]["data"].shape
 
     model_args = dict(tokenizer=HamNoSysTokenizer(),
@@ -473,15 +486,16 @@ if __name__ == '__main__':
 
     args.checkpoint = f"/home/nlp/rotemsh/transcription/models/{experiment_name}/model.ckpt"
     model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
+    model = model.cuda()
     model.eval()
 
-    output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/results/process"
+    # output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/results/all_test"
     # subset = ["51119", "84347"]
     # generate_different_step_num_vids(model, model_args, dataset, subset, output_dir)
     # exit()
 
     model_for_seq_len = None
-    if args.num_steps != 10:
+    if True:#args.num_steps != 10:
         checkpoint = f"/home/nlp/rotemsh/transcription/models/reproduce_exclude_sep_2/model.ckpt"
         model_args["num_steps"] = 10
         model_for_seq_len = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(checkpoint,
@@ -490,24 +504,32 @@ if __name__ == '__main__':
 
     # output_dir = f"/home/nlp/rotemsh/transcription/text_to_pose/videos/" \
     #              f"{experiment_name}/all_test"
-    subset = ["84347", "pjm_1675"]
-    pred(model, dataset, output_dir, gen_k=600, subset=subset, vis_process=True)#, model_for_seq_len=model_for_seq_len)
-    exit()
+    # subset = ["84347", "pjm_1675"]
+
+    # pred(model, dataset, output_dir, gen_k=1, model_for_seq_len=model_for_seq_len) #subset=subset, vis_process=True)
+    # exit()
 
     # pose_header = dataset.data[0]["pose"].header
     #
     # # idx2id = {14: "10334", 18: "pjm_1220", 91: "2358", 246: "2507", 369: "84347", 55: "9615", 59: "27007",
     # # 217: "8633", 265: "58978", 246: "2507", 18: "pjm_1220"}
     # # idx = 18
-    # with torch.no_grad():
-    #     for datum in dataset:
+
+    import time
+    with torch.no_grad():
+        for datum in dataset:
     #         if datum["id"] in subset:
     #             # for idx, id in idx2id.items():
-    #             text = datum["text"]
-    #             # #dataset[0]["text"]
-    #             first_pose = datum["pose"]["data"][0] #dataset[idx]["pose"]["data"][0]
-    #             seq_iter = model.forward(text=text, first_pose=first_pose)
-    #             for j in range(model.num_steps):
-    #                 seq = next(seq_iter)
+            mean_time = 0
+            for i in range(50):
+                text = datum["text"] #dataset[0]["text"]
+                first_pose = datum["pose"]["data"][0].cuda() #dataset[idx]["pose"]["data"][0]
+                seq_len = int(model_for_seq_len.encode_text([datum["text"]])[1].item())
+                start_time = time.time()
+                seq_iter = model.forward(text=text, first_pose=first_pose, sequence_length=seq_len)
+                for j in range(model.num_steps):
+                    seq = next(seq_iter)
+                mean_time += time.time()-start_time
     #             visualize_seq(seq, pose_header, output_dir, f"{datum['id']}_large", #_from_{idx2id[idx]}",
     #                           label_pose=datum["pose"]["obj"])
+            print(mean_time/50)

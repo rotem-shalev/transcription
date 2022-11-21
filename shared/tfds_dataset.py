@@ -10,8 +10,13 @@ from pose_format import Pose
 from pose_format.pose_header import PoseHeader
 from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.reader import BufferReader
-from shared.pose_utils import pose_normalization_info, pose_hide_legs, pose_hide_low_conf, get_relative_pose
+from shared.pose_utils import pose_normalization_info, pose_hide_legs, pose_hide_low_conf
 import json
+
+import sys
+import os
+rootdir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, rootdir)
 
 PJM_FRAME_WIDTH = 1280
 with open("shared/pjm_left_videos.json", 'r') as f:

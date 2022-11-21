@@ -188,8 +188,8 @@ def get_pose_data(poses):
     poses_data = []
     for pose in poses:
         poses_data.append(np.ma.concatenate([pose.body.data[:, :, :95],
-                                                 pose.body.data[:, :, 95:116],
-                                                 pose.body.data[:, :, 116:]], axis=2))
+                                             pose.body.data[:, :, 95:116],
+                                             pose.body.data[:, :, 116:]], axis=2))
     return poses_data
 
 

@@ -46,6 +46,7 @@ _CITATION = """
 
 MAX_HEIGHT = 400
 MAX_WIDTH = 400
+MIN_CONFIDENCE = 0.2
 
 EXCLUDE_VIDEOS = ["pjm_1969", "pjm_1066", "pjm_3052", "gsl_602", "pjm_2813", "pjm_1563", "pjm_255", "pjm_1099",
                   "pjm_143", "gsl_204", "pjm_1476", "pjm_3076", "pjm_3370", "pjm_2269", "ENTIER_ ", "pjm_1523",
@@ -112,8 +113,6 @@ _POSE_HEADERS = {
 }
 _DATA_PATH = path.join(path.dirname(path.realpath(__file__)), "data.json")
 _KEYPOINTS_PATH = path.join(path.dirname(path.realpath(__file__)), "keypoints")
-# _KEYPOINTS_PATH = "/home/nlp/rotemsh/SLP/data/keypoints_dir"
-MIN_CONFIDENCE = 0.2
 
 
 def get_pose(keypoints_path: str, fps: int) -> Dict[str, Pose]:

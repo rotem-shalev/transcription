@@ -95,49 +95,6 @@ def get_node2parent_dict(only_hands=False):
     return node2parent
 
 
-def get_relative_pose(pose):
-    node2parent = OrderedDict(list(get_node2parent_dict().items())[::-1])
-    relative_pose = np.zeros_like(pose)
-    for i, frame in enumerate(pose):
-        for joint, parent in node2parent.items():
-            if np.ma.is_masked(frame[0][joint]):
-                continue
-            if np.ma.is_masked(frame[0][parent]):  # TODO- not ideal..
-                parent = node2parent[parent]
-                missing_parents = 1
-                while np.ma.is_masked(frame[0][parent]):
-                    if node2parent[parent] == parent:
-                        continue
-                    parent = node2parent[parent]
-                    missing_parents += 1
-                relative_pose[i][0][joint] = (frame[0][joint] - frame[0][parent])/(missing_parents+1)
-            else:
-                relative_pose[i][0][joint] = frame[0][joint] - frame[0][parent]
-    return relative_pose
-
-
-def get_original_pose(poses):
-    node2parent = get_node2parent_dict()
-    for pose in poses:
-        original_pose = np.zeros_like(pose.body.data)
-        for i, frame in enumerate(pose.body.data):
-            for joint, parent in node2parent.items():
-                if np.ma.is_masked(frame[0][joint]):  # TODO - is root in (0,0)? for the label it is, but for the pred?
-                    continue
-                if np.ma.is_masked(frame[0][parent]):  # TODO- not ideal..
-                    parent = node2parent[parent]
-                    missing_parents = 1
-                    while np.ma.is_masked(frame[0][parent]):
-                        if node2parent[parent] == parent:
-                            continue
-                        parent = node2parent[parent]
-                        missing_parents += 1
-                    original_pose[i][0][joint] = (frame[0][parent] + frame[0][joint])/(missing_parents+1)
-                else:
-                    original_pose[i][0][joint] = frame[0][parent] + frame[0][joint]
-        pose.body.data = original_pose
-
-
 def fake_pose(num_frames: int, fps: int = 25):
     dimensions = PoseHeaderDimensions(width=1, height=1, depth=1)
     header = PoseHeader(version=0.1, dimensions=dimensions, components=OpenPose_Components)

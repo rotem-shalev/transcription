@@ -12,7 +12,7 @@ from text_to_pose.data import get_dataset
 from text_to_pose.tokenizers.hamnosys.hamnosys_tokenizer import HamNoSysTokenizer
 from text_to_pose.constants import DATASET_SIZE, num_steps_to_batch_size
 from text_to_pose.model import IterativeTextGuidedPoseGenerationModel
-from text_to_pose.pred import pred, predict_pose
+from text_to_pose.predict import pred, predict_pose
 from text_to_pose.metrics import get_poses_ranks
 
 
@@ -77,17 +77,17 @@ def test_seq_len(model, dataset, model_name):
     print(f"mean absolute diff: {np.mean(list(abs_diffs.values()))}, median:"
           f" {np.median(list(abs_diffs.values()))}")
 
-    plt.hist(list(diffs.values()), bins=10)
-    plt.title("Predicted vs. real sequence length difference")
+    plt.hist([v * 100 for v in diffs.values()], bins=80)
+    plt.xticks(ticks=[-50, 0, 50, 100, 150], labels=["-50%", "0%", "50%", "100%", "150%"])
+    # plt.title("Predicted vs. real sequence length difference")
     plt.xlabel('sequence length error percentage')
     plt.ylabel('Count')
-    os.makedirs(f"models/{model_name}/results", exist_ok=True)
     plt.savefig(f"models/{model_name}/results/seq_len_diff_hist.png")
     plt.clf()
 
     plt.hist(list(abs_diffs.values()), bins=10)
-    plt.title("Predicted vs. real sequence length absolute difference")
-    plt.xlabel('frames number difference (FPS=25)')
+    # plt.title("Predicted vs. real sequence length absolute difference")
+    plt.xlabel('frame number difference (FPS=25)')
     plt.ylabel('Count')
     plt.savefig(f"models/{model_name}/results/seq_len_abs_diff_hist.png")
     plt.clf()
@@ -96,6 +96,7 @@ def test_seq_len(model, dataset, model_name):
         json.dump(diffs, f)
     with open(f"models/{model_name}/results/seq_len_abs_diffs.json", 'w') as f:
         json.dump(abs_diffs, f)
+
 
 def test_distance_ranks(model, model_name, dataset, keypoints_path, num_samples=20):
     keypoints_dirs = os.listdir(keypoints_path)
@@ -190,10 +191,11 @@ if __name__ == "__main__":
                       concat=True
                       )
 
+    args.model_name = "reproduce_exclude_sep_2"
     args.checkpoint = f"models/{args.model_name}/model.ckpt"
     model = IterativeTextGuidedPoseGenerationModel.load_from_checkpoint(args.checkpoint, **model_args)
     model.eval()
 
-    test(model, args.model_name, dataset, test_seq_len_predictor=True, test_ranks=True, output_dir="",
+    test(model, args.model_name, dataset, test_seq_len_predictor=True, test_ranks=False, output_dir=args.output_dir,
          keypoints_path="datasets/hamnosys/keypoints")
 
